@@ -10,7 +10,7 @@ import PostDetail from '@/components/PostDetail.vue';
 const router = createRouter({
   history: createWebHistory(), // URL 처리 방식 (HTML5 히스토리 모드)
   routes: [
-    { path: '/', name: 'PostListPage', component: PostListPage },
+    { path: '/', name: 'Home', component: PostListPage },
     { path: '/write', name: 'PostForm', component: PostForm },
     { path: '/detail/:id', name:'PostDetail', component: PostDetail} // 동적 라우트 설정
   ],
