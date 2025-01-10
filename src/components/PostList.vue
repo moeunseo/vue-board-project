@@ -3,10 +3,10 @@
         <h1>게시글 목록</h1><br>
          <!-- 작성하기 버튼을 누르면 작성 폼으로 이동하는 라우터 등록 -->
          <!-- <button><router-link to="/write">작성하기</router-link></button> -->
-         <router-link to="/write" class="write-btn">작성하기</router-link>
+         <router-link :to="{name: 'PostForm'}" class="write-btn">작성하기</router-link>
       <ul>
-        <li v-for="post in paginatedPosts" :key="post.id">{{post.id}}.
-          <router-link :to="'/detail/' + post.id">{{ post.title }}</router-link>
+        <li v-for="post in paginatedPosts" :key="post.board_id">{{post.board_id}}.
+          <router-link :to="{name: 'PostDetail',  params: { id: post.board_id }}">{{ post.board_title }}</router-link>
         </li>
       </ul>
   
@@ -28,21 +28,17 @@
   </template>
   
   <script>
-
+  import axios from 'axios'
   export default {
     // 컴포넌트의 이름 지정
     // 주로 디버깅, 재귀적, 라우터 연동 시 유용하게 사용
     name: 'PostList',
     // 화면이 렌더링 되기 전에 먼저 시작되는 속성으로 주로 데이터나 api호출 시 사용
     // 현재 코드는 리스트 화면에 로컬 스토리지에 저장되어 있는 데이터들을 가져와서 화면에 뿌려준다.
-    created(){
-      const savedPosts = JSON.parse(localStorage.getItem('posts')) || []
-      // 배열에 로컬 스토리지에 저장된 데이터를 저장
-      this.posts = savedPosts
-      // 기존 데이터가 있을 경우, postId를 마지막 게시글의 id + 1로 설정
-      if (savedPosts.length > 0) {
-        this.postId = savedPosts[savedPosts.length - 1].id + 1;
-      }
+    mounted(){
+      // API 호출로 backend.js 안에서 데이터 가져오기
+      this.boardAll()
+     
     },
     data() {
       return {
@@ -68,6 +64,17 @@
         if (page >= 1 && page <= this.totalPages) {
           this.currentPage = page;
         }
+      },
+
+      // 리스트를 뿌려줄 메소드
+      boardAll(){
+        axios.get("http://localhost:3000/main")
+        .then(response =>{
+          this.posts = response.data
+        })
+        .catch (error =>{
+          console.error('데이터 가져오기 오류', error)
+        })
       }
     }
   };
