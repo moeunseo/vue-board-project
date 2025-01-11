@@ -81,3 +81,10 @@ textarea {
   cursor: pointer;
   font-weight: bold;
 }
+
+/* 에러메시지 여부 */
+.errorMsg {
+  color: red;
+  font-size: 1rem;
+  margin-top: 10px;
+}

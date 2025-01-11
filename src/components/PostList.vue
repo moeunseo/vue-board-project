@@ -2,10 +2,11 @@
     <div>
         <h1>게시글 목록</h1><br>
          <!-- 작성하기 버튼을 누르면 작성 폼으로 이동하는 라우터 등록 -->
-         <!-- <button><router-link to="/write">작성하기</router-link></button> -->
          <router-link :to="{name: 'PostForm'}" class="write-btn">작성하기</router-link>
       <ul>
         <li v-for="post in paginatedPosts" :key="post.board_id">{{post.board_id}}.
+          <!-- 문자열로 넘겨버리면 뷰 라우터가 해당 id값을 찾을 수 없다.
+               따라서, parms를 사용하여 id값을 넘겨주면 라우터가 제대로 동작한다. -->
           <router-link :to="{name: 'PostDetail',  params: { id: post.board_id }}">{{ post.board_title }}</router-link>
         </li>
       </ul>
@@ -28,6 +29,7 @@
   </template>
   
   <script>
+  // aixos를 사용하기 위해 import
   import axios from 'axios'
   export default {
     // 컴포넌트의 이름 지정
@@ -66,10 +68,14 @@
         }
       },
 
-      // 리스트를 뿌려줄 메소드
+      // DB 안에 있는 데이터들을 뿌려주는 메소드
+      // API 호출하는
       boardAll(){
         axios.get("http://localhost:3000/main")
+        // 실제 응답하는 부분
         .then(response =>{
+          console.log('받아온 데이터:', response.data)
+          // respone.data의 데이터를 가져오기 위해선 배열 안에 저장해야 한다.
           this.posts = response.data
         })
         .catch (error =>{
@@ -77,7 +83,7 @@
         })
       }
     }
-  };
+  }
   </script>
   
 <style scoped>

@@ -58,11 +58,12 @@ export default {
         content: this.content
       }
 
-      axios.post("http://localhost:3000/write", boardData, 
-      {headers: {'Content-Type': 'application/json'}
-      })
+      axios.post("http://localhost:3000/write", boardData)
+      // axios는 자동으로 파싱을 지원해주기에 명시할 필요는 없지만 알고 있자
+      // {headers: {'Content-Type': 'application/json'}})
       .then(response =>{
         console.log(response.data)
+        alert('작성 완료되었습니다.')
         this.$router.push({name: 'Home'})
         this.title='',
         this.content=''
@@ -77,7 +78,6 @@ export default {
 </script>
 
 <style scoped>
-/* 게시글 작성, 수정 컴포넌트 css */
 .submit-btn {
   background-color: #007bff;
   margin-left: 390px;
@@ -95,11 +95,5 @@ export default {
 .button-group .back-btn:focus,
 .button-group .submit-btn:focus {
   outline: none;
-}
-
-.errorMsg {
-  color: red;
-  font-size: 1rem;
-  margin-top: 10px;
 }
 </style>
