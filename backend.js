@@ -100,10 +100,14 @@ app.delete('/detail/:id', (req, res)=>{
     const postId = req.params.id
     db.query('delete from board where board_id = ?',
         [postId],
-        (err) =>{
+        (err, results) =>{
             if(err){
                 console.err('DB 삭제 중 오류 발생', err)
                 return res.status(500).send('서버 오류')
+            }
+
+            if(results.affectedRows === 0){
+                return res.status(404).send('게시글을 찾을 수 없습니다.')
             }
             res.status(200).send('게시글 삭제 성공!')
         } 
@@ -135,14 +139,26 @@ app.put('/detail/:id', (req, res)=>{
 // 댓글 목록 불러오기
 app.get('/comment/:id', (req, res)=>{
     const boardId = req.params.id
-    db.query('select comment_content, updated_at from comments where board_id = ?',
+    db.query('select comment_id, comment_content, created_at, updated_at from comments where board_id = ?',
         [boardId],
         (err, results) =>{
             if(err){
                 return res.status(500).send('서버 오류')
             }
-            console.log(results)
-            res.json(results)
+            console.log('===========',results)
+
+            const commentStatus = results.map(comment =>{
+                const created_at = new Date(comment.created_at)
+                const updated_at = new Date(comment.updated_at)
+
+                const gapTime = updated_at.getTime() - created_at.getTime()
+                const status = gapTime !== 0 ? '(수정됨)' : ''
+
+                return {...comment, status}
+            })
+        
+            console.log(commentStatus)
+            res.json(commentStatus)
         }
     )
 })
@@ -150,9 +166,6 @@ app.get('/comment/:id', (req, res)=>{
 // 댓글 작성
 app.post('/comment/:id', (req,res)=>{
     const {newComment, boardId} = req.body
-
-    console.log('================',newComment)
-    console.log('================',boardId)
 
     if(!newComment){
         return res.status(400).send('제목과 내용은 필수입니다.')
@@ -170,8 +183,50 @@ app.post('/comment/:id', (req,res)=>{
     )
 })
 // 댓글 삭제
+app.delete('/comment/:id', (req, res)=>{
+    const boardId = req.params.id
+    const commentId = req.body.commentId
 
+    console.log('=========', boardId, commentId)
+
+    db.query('delete from comments where comment_id=? and board_id=?',
+        [commentId, boardId],
+        (err, results)=>{
+            if(err){
+                console.error('댓글 삭제 오류!', err)
+                return res.status(500).send('서버 오류')
+            }
+
+            if(results.affectedRows === 0){
+                return res.status(404).send('댓글을 찾을 수 없습니다.')
+            }
+            res.status(200).send('댓글 삭제 완료!')
+        }
+    )
+})
 // 댓글 수정
+app.put('/comment/:id', (req, res)=>{
+    const boardId = req.params.id
+    const {id: commentId, newComment: commentContent} = req.body
+
+    console.log(req.body)
+    console.log('===========', boardId, commentId, commentContent)
+
+    if (!commentContent) {
+        return res.status(400).send('내용은 필수입니다.')
+    }
+
+    db.query('update comments set comment_content = ?, updated_at = now() where comment_id = ? and board_id = ?',
+        [commentContent, commentId, boardId],
+        (err)=>{
+            if(err){
+                console.error('댓글 수정 오류!', err)
+                return res.status(500).send('서버 오류')
+            }
+            res.status(200).send('댓글 수정 완료!')
+        }
+    )
+})
 
 
 // Vue 빌드 파일 정적 제공

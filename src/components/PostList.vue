@@ -1,161 +1,186 @@
 <template>
-    <div>
-        <h1>게시글 목록</h1><br>
-         <!-- 작성하기 버튼을 누르면 작성 폼으로 이동하는 라우터 등록 -->
-         <router-link :to="{name: 'PostForm'}" class="write-btn">작성하기</router-link>
-      <ul>
-        <li v-for="post in paginatedPosts" :key="post.board_id">{{post.board_id}}.
-          <!-- 문자열로 넘겨버리면 뷰 라우터가 해당 id값을 찾을 수 없다.
-               따라서, parms를 사용하여 id값을 넘겨주면 라우터가 제대로 동작한다. -->
-          <router-link :to="{name: 'PostDetail',  params: { id: post.board_id }}">{{ post.board_title }}</router-link>
-        </li>
-      </ul>
-  
-      <!-- 페이지네이션 버튼 -->
-      <div class="pagination">
-        <button 
-          :disabled="currentPage === 1" 
-          @click="changePage(currentPage - 1)">
-          이전
-        </button>
-        <span>{{ currentPage }} / {{ totalPages }}</span>
-        <button 
-          :disabled="currentPage === totalPages" 
-          @click="changePage(currentPage + 1)">
-          다음
-        </button>
-      </div>
+  <div class="post-list-container">
+    <h1>게시글 목록</h1><br>
+    <!-- 작성하기 버튼을 누르면 작성 폼으로 이동하는 라우터 등록 -->
+    <router-link :to="{ name: 'PostForm' }" class="write-btn">작성하기</router-link>
+    
+    <ul class="post-list">
+      <li v-for="post in paginatedPosts" :key="post.board_id" class="post-item">
+        <!-- 문자열로 넘겨버리면 뷰 라우터가 해당 id값을 찾을 수 없다. -->
+        <router-link :to="{ name: 'PostDetail', params: { id: post.board_id } }" class="post-title">
+          {{ post.board_title }}
+        </router-link>
+      </li>
+    </ul>
+
+    <!-- 페이지네이션 버튼 -->
+    <div class="pagination">
+      <button :disabled="currentPage === 1" @click="changePage(currentPage - 1)">
+        이전
+      </button>
+      <span class="page-number">{{ currentPage }} / {{ totalPages }}</span>
+      <button :disabled="currentPage === totalPages" @click="changePage(currentPage + 1)">
+        다음
+      </button>
     </div>
-  </template>
-  
-  <script>
-  // aixos를 사용하기 위해 import
-  import axios from 'axios'
-  export default {
-    // 컴포넌트의 이름 지정
-    // 주로 디버깅, 재귀적, 라우터 연동 시 유용하게 사용
-    name: 'PostList',
-    // 화면이 렌더링 되기 전에 먼저 시작되는 속성으로 주로 데이터나 api호출 시 사용
-    // 현재 코드는 리스트 화면에 로컬 스토리지에 저장되어 있는 데이터들을 가져와서 화면에 뿌려준다.
-    mounted(){
-      // API 호출로 backend.js 안에서 데이터 가져오기
-      this.boardAll()
-     
+  </div>
+</template>
+
+<script>
+import axios from 'axios'
+
+export default {
+  name: 'PostList',
+  mounted() {
+    this.boardAll()
+  },
+  data() {
+    return {
+      postId: 1,
+      posts: [],
+      itemsPerPage: 5, // 한 페이지에 표시할 데이터 개수
+      currentPage: 1  // 현재 페이지 번호
+    }
+  },
+  computed: {
+    totalPages() {
+      return Math.ceil(this.posts.length / this.itemsPerPage)
     },
-    data() {
-      return {
-        postId: 1,
-        posts: [],
-        itemsPerPage: 5, // 한 페이지에 표시할 데이터 개수
-        currentPage: 1  // 현재 페이지 번호
+    paginatedPosts() {
+      const startIndex = (this.currentPage - 1) * this.itemsPerPage
+      const endIndex = startIndex + this.itemsPerPage
+      return this.posts.slice(startIndex, endIndex)
+    }
+  },
+  methods: {
+    changePage(page) {
+      if (page >= 1 && page <= this.totalPages) {
+        this.currentPage = page
       }
     },
-    computed: {
-      totalPages() {
-        return Math.ceil(this.posts.length / this.itemsPerPage);
-      },
-
-      paginatedPosts() {
-        const startIndex = (this.currentPage - 1) * this.itemsPerPage;
-        const endIndex = startIndex + this.itemsPerPage;
-        return this.posts.slice(startIndex, endIndex);
-      }
-    },
-    methods: {
-      changePage(page) {
-        if (page >= 1 && page <= this.totalPages) {
-          this.currentPage = page;
-        }
-      },
-
-      // DB 안에 있는 데이터들을 뿌려주는 메소드
-      // API 호출하는
-      boardAll(){
-        axios.get("http://localhost:3000/main")
-        // 실제 응답하는 부분
-        .then(response =>{
+    boardAll() {
+      axios.get("http://localhost:3000/main")
+        .then(response => {
           console.log('받아온 데이터:', response.data)
-          // respone.data의 데이터를 가져오기 위해선 배열 안에 저장해야 한다.
           this.posts = response.data
         })
-        .catch (error =>{
+        .catch(error => {
           console.error('데이터 가져오기 오류', error)
         })
-      }
     }
   }
-  </script>
-  
+}
+</script>
+
 <style scoped>
+.post-list-container {
+  width: 80%;
+  margin: 0 auto;
+  font-family: 'Roboto', sans-serif;
+  padding: 20px;
+}
+
 h1 {
-  display: inline-block; /* 제목과 버튼을 한 줄로 정렬 */
-  margin-right: 10px; /* 제목과 버튼 간격 조정 */
-}
-
-/* 버튼 스타일 */
-button {
-  padding: 5px 10px;
-  margin: 0 5px;
-  cursor: pointer;
-  background-color: #004A99; /* 파란물결 색상 */
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 14px;
-  transition: background-color 0.3s;
-}
-
-button:hover {
-  background-color: #0074D9; /* 호버 시 더 밝은 파란색 */
-}
-
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
+  text-align: center;
+  font-size: 2rem;
+  color: #333;
+  margin-bottom: 20px;
 }
 
 .write-btn {
-  display: inline-block; /* 버튼처럼 보이도록 변경 */
-  padding: 10px 15px;
-  background-color: #004A99;
+  display: block;
+  width: 150px;
+  margin: 20px auto;
+  padding: 10px;
+  background-color: #007bff;
   color: white;
-  text-decoration: none; /* 링크 스타일 제거 */
-  text-align: center; /* 텍스트 가운데 정렬 */
-  border: none;
-  border-radius: 5px;
-  font-size: 15px;
   font-weight: bold;
-  cursor: pointer;
-  margin-left: 300px;
+  text-align: center;
+  border-radius: 5px;
+  text-decoration: none;
+  transition: background-color 0.3s;
 }
 
+.write-btn:hover {
+  background-color: #0056b3;
+}
 
-/* 게시글 목록 스타일 */
-ul {
-  list-style-type: none; /* li 태그 점 제거 */
+.post-list {
+  list-style-type: none;
   padding: 0;
+  margin: 0;
+}
+
+.post-item {
+  padding: 15px;
   margin: 10px 0;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s;
 }
 
-li {
-  padding: 5px 0;
-  font-size: 16px;
+.post-item:hover {
+  transform: translateY(-5px);
 }
 
-/* 페이지네이션 버튼 스타일 */
+.post-title {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #333;
+  text-decoration: none;
+  display: block;
+}
+
+.post-title:hover {
+  color: #007bff;
+}
+
 .pagination {
-  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 30px;
 }
 
 .pagination button {
+  padding: 10px 15px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 5px;
   margin: 0 5px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.pagination button:hover {
+  background-color: #0056b3;
+}
+
+.pagination button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+.page-number {
+  font-size: 1rem;
+  margin: 0 10px;
 }
 
 /* 반응형 레이아웃 */
 @media (max-width: 600px) {
-  h1, button {
-    display: block; /* 작은 화면에서 제목과 버튼을 위아래로 정렬 */
-    margin-bottom: 10px;
+  .write-btn {
+    width: 100px;
+  }
+
+  .post-item {
+    padding: 12px;
+  }
+
+  .pagination {
+    flex-direction: column;
   }
 }
 </style>
