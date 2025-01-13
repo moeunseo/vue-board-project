@@ -3,8 +3,13 @@ const mysql = require('mysql')
 const app = express()
 const port = 3000
 const path = require('path')
+// 이미지 업로드할 때 많이 사용
+const multer = require('multer')
+// 파일 시스템에 사용되는 모듈
+const fs = require('fs')
 const cors = require('cors'); // CORS 패키지 추가
 app.use(cors()); // 모든 요청을 허용 (개발 단계에서만 사용)
+const moment = require('moment')
 
 
 // MySQL 연결 설정
@@ -27,20 +32,80 @@ db.connect((err)=>{
 // 간단한 라우트 추가
 // 메인 화면(PostList)에 데이터를 가져오기
 app.get('/main', (req, res) => {
-    db.query('SELECT *FROM board', (err, results)=>{
+    // 작성이 최신순인순으로 불러오기
+    db.query('SELECT *FROM board order by board_current_time desc', 
+        (err, results)=>{
         if(err){
             return res.status(500).send('서버 오류')
         }
         res.json(results) // json형태로 보내기 때문에 express.json 필요X
     })
-  })
+})
+
+// 검색된 결과 select
+app.get('/main/:query', (req, res)=>{
+    // 검색된 단어를 받아옴
+    console.log('잘되니?', req.params.query)
+    const searchWord = req.params.query
+    
+    const serarchQuery = `
+        SELECT *FROM board
+        WHERE board_title LIKE CONCAT('%', ?, '%')
+        OR board_content LIKE CONCAT('%', ?, '%')
+        order by board_current_time desc`
+    db.query(serarchQuery,
+        [searchWord, searchWord],
+        (err, results)=>{
+            if(err){
+                return res.status(500).send(err)
+            }
+            else{
+                res.json(results)
+            }
+        }
+    )
+})
 
 // 클라이언트로 부터 요청이 들어오면 express는 데이터가 json형식인지 몰라서 직접 설정
 app.use(express.json())
+
+// Multer 설정 (파일 업로드)
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const date = new Date()
+        const year = String(date.getFullYear())
+        const month = String(date.getMonth() + 1).padStart(2, '0'); // 월
+        const day = String(date.getDate()).padStart(2, '0'); // 일
+        
+        const folderPath = path.join(__dirname, 'uploads', year, month, day).replace(/\\/g, '/')
+
+        // 폴더가 없다면 자동 생성
+        fs.mkdirSync(folderPath, {recursive: true})
+
+        cb(null, folderPath)
+      },
+      filename: (req, file, cb) => {
+        // moment 모듈을 사용하여 시간 형태와 원본 파일 이름 한글이 깨지지 않게 저장
+        file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8')
+        cb(null, moment().format('YYYYMMDD') + '_' + file.originalname); // 파일 이름 설정
+      }
+})
+
+// multer를 사용하면 json형태를 자동 파싱해준다
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB 제한
+    fileFilter: (req, file, cb) => {
+      cb(null, true)
+    }
+})
+
 // 게시글 작성
-app.post('/write', (req, res) => {
-    console.log('작성한 데이터',req.body)
-    const { title, content } = req.body
+app.post('/write', upload.array('files'), (req, res) => {
+    console.log('받아온 제목과 내용', req.body)
+    console.log('받아온 파일', req.files)
+
+     const {title, content} = req.body
 
     // 제목과 내용이 없으면 에러 반환 (더블체크)
     // 개발자 도구에서는 html파일을 전체 볼 수가 있어, 사용자가 임시로 작성하기 버튼을 비활성화
@@ -50,15 +115,47 @@ app.post('/write', (req, res) => {
         return res.status(400).send('제목과 내용은 필수입니다.');
     }
 
-    // 게시글 데이터 DB에 삽입
+    // board INSERT
     db.query(
-        'INSERT INTO board (board_title, board_content, board_current_time) VALUES (?, ?, NOW())',
+        'INSERT INTO board (board_title, board_content) VALUES (?, ?)',
         [title, content],
-        (err) => {
+        (err, result) => {
             if (err) {
                 return res.status(500).send('서버 오류');
             }
-            res.status(201).send('게시글 작성 완료');
+
+            const boardId = result.insertId // result안에 게시글id값을 포함하고 있음
+
+            // board_file INSERT
+            // 파일 업로드가 되었다면~
+            if(req.files && req.files.length > 0){
+                const fileQueries = req.files.map(file =>{
+                    return new Promise((resolve, reject) =>{
+                        const filePath = file.path.replace(/\\/g, '/')
+                        const fileQuery = 'INSERT INTO board_file (file_name, file_size, file_url, board_id) values (?,?,?,?)'
+                        db.query(fileQuery, [file.filename, file.size, filePath,boardId],
+                            (err)=>{
+                                if(err){
+                                    reject('첨부파일 삽입 오류')
+                                }
+                                else{
+                                    resolve()
+                                }
+                            }
+                        )
+                    })
+                })
+                Promise.all(fileQueries)
+                .then(()=>{
+                    res.status(200).send('게시글이 성공적으로 업로드 되었습니다.')
+                })
+                .catch(error =>{
+                    res.status(500).send(error)
+                })
+            }
+            else{
+                res.status(200).send('게시글이 성공적으로 업로드되었습니다. (파일 없음)');
+            }
         }
     );
 });
@@ -66,7 +163,11 @@ app.post('/write', (req, res) => {
 // 게시글 상세보기 페이지 이동
 app.get('/detail/:id', (req, res) => {
     const postId = req.params.id
-    db.query('select board_title, board_content, board_update_time, board_current_time from board where board_id = ?',
+    db.query(`
+        select b.board_title, b.board_content, b.board_update_time, b.board_current_time, f.file_name, f.file_url, f.file_size 
+        from board b left join board_file f
+        on b.board_id = f.board_id
+        where b.board_id = ?`,
         [postId],
         (err, results)=>{
         if(err){
@@ -89,28 +190,69 @@ app.get('/detail/:id', (req, res) => {
         console.log('timeDifference (ms):', timeDifference);  // 차이 출력
         
         const status = timeDifference !== 0? '(수정됨)' : ''
+
+        // 게시글과 파일을 같이 보내기 위해해
+        const response = {
+            title: post.board_title,
+            content: post.board_content,
+            updatedAt: post.board_update_time,
+            status: status,
+            files: []
+        }
+
+        results.forEach(result =>{
+            if(result.file_name){
+                response.files.push({
+                    fileName: result.file_name,
+                    fileUrl: result.file_url,
+                    fileSize: result.file_size
+                })
+            }
+        })
         // ...: 스프레드 연산자
         // 기존 데이터 + 필요한 값을 덧붙이기 위해 사용
-        res.json({...post, status})
+        console.log('====', response)
+        res.json(response)
     })
   })
 
 // 게시글 삭제
 app.delete('/detail/:id', (req, res)=>{
     const postId = req.params.id
-    db.query('delete from board where board_id = ?',
-        [postId],
-        (err, results) =>{
-            if(err){
-                console.err('DB 삭제 중 오류 발생', err)
-                return res.status(500).send('서버 오류')
-            }
 
-            if(results.affectedRows === 0){
-                return res.status(404).send('게시글을 찾을 수 없습니다.')
-            }
-            res.status(200).send('게시글 삭제 성공!')
-        } 
+    // DB에서 첨부파일 URL 가져오기
+    db.query('select file_url from board_file where board_id = ?',
+        [postId], 
+        (err, resultsDB)=>{
+            if (err){
+                return res.status(500).send('서버 오류')
+            }                
+
+            // 게시글 삭제
+            db.query('delete from board where board_id = ?',
+                [postId],
+                (err, results) =>{
+                    if(err){
+                        console.err('DB 삭제 중 오류 발생', err)
+                        return res.status(500).send('서버 오류')
+                    }
+
+                    if(results.affectedRows === 0){
+                        return res.status(404).send('게시글을 찾을 수 없습니다.')
+                    }
+                } 
+            )
+
+            // 서버에 업로드된 파일 삭제
+            resultsDB.forEach((file)=>{
+                const filePath = path.resolve(file.file_url)
+                fs.unlink(filePath, (err)=>{
+                    if(err) console.error(`파일 삭제 실패: ${filePath}`, err)
+                    else console.log(`파일 삭제 성공: ${filePath}`)
+                })
+            })
+            res.status(200).send('게시글 삭제 완료')
+        }
     )
 })
 
@@ -139,7 +281,10 @@ app.put('/detail/:id', (req, res)=>{
 // 댓글 목록 불러오기
 app.get('/comment/:id', (req, res)=>{
     const boardId = req.params.id
-    db.query('select comment_id, comment_content, created_at, updated_at from comments where board_id = ?',
+    db.query(`
+        select comment_id, comment_content, created_at, updated_at 
+        from comments where board_id = ?
+        order by created_at desc`,
         [boardId],
         (err, results) =>{
             if(err){
@@ -227,7 +372,6 @@ app.put('/comment/:id', (req, res)=>{
         }
     )
 })
-
 
 // Vue 빌드 파일 정적 제공
 app.use(express.static(path.join(__dirname, 'dist')));

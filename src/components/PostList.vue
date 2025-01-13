@@ -4,14 +4,20 @@
     <!-- 작성하기 버튼을 누르면 작성 폼으로 이동하는 라우터 등록 -->
     <router-link :to="{ name: 'PostForm' }" class="write-btn">작성하기</router-link>
     
+    <!-- 검색하기 -->
+     <!-- 자식에서 보내온 에미터를 받음 -->
+    <PostSearch @searchWord="search"/>
+
     <ul class="post-list">
       <li v-for="post in paginatedPosts" :key="post.board_id" class="post-item">
-        <!-- 문자열로 넘겨버리면 뷰 라우터가 해당 id값을 찾을 수 없다. -->
         <router-link :to="{ name: 'PostDetail', params: { id: post.board_id } }" class="post-title">
           {{ post.board_title }}
         </router-link>
       </li>
     </ul>
+
+    <!-- 검색 결과가 없을 경우 메시지 출력 -->
+    <p v-if="searchWord && paginatedPosts.length === 0">검색 결과가 없습니다.</p>
 
     <!-- 페이지네이션 버튼 -->
     <div class="pagination">
@@ -28,18 +34,22 @@
 
 <script>
 import axios from 'axios'
+import PostSearch from './PostSearch.vue';
 
 export default {
   name: 'PostList',
+  components:{
+    PostSearch
+  },
   mounted() {
     this.boardAll()
   },
   data() {
     return {
-      postId: 1,
-      posts: [],
-      itemsPerPage: 5, // 한 페이지에 표시할 데이터 개수
-      currentPage: 1  // 현재 페이지 번호
+      posts:[],
+      itemsPerPage: 10, // 한 페이지에 표시할 데이터 개수
+      currentPage: 1,  // 현재 페이지 번호
+      searchWord: ''
     }
   },
   computed: {
@@ -58,8 +68,18 @@ export default {
         this.currentPage = page
       }
     },
+    search(word){
+      console.log(word)
+      this.searchWord = word
+      this.boardAll()
+    },
     boardAll() {
-      axios.get("http://localhost:3000/main")
+      const url = this.searchWord ?
+      `http://localhost:3000/main/${this.searchWord}`
+      : `http://localhost:3000/main`
+      
+      console.log('검색된 url', url)
+      axios.get(url)
         .then(response => {
           console.log('받아온 데이터:', response.data)
           this.posts = response.data

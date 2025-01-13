@@ -6,6 +6,7 @@ import PostListPage from '@/pages/PostListPage.vue';
 import PostForm from '@/components/PostForm.vue';
 import PostDetail from '@/components/PostDetail.vue';
 import PostComment from '@/components/PostComment.vue';
+import PostSearch from '@/components/PostSearch.vue';
 
 // 라우터 생성
 const router = createRouter({
@@ -14,7 +15,8 @@ const router = createRouter({
     { path: '/', name: 'Home', component: PostListPage },
     { path: '/write', name: 'PostForm', component: PostForm },
     { path: '/detail/:id', name:'PostDetail', component: PostDetail}, // 동적 라우트 설정
-    { path: '/comments/:id', name: 'PostComment', component: PostComment}
+    { path: '/comments/:id', name: 'PostComment', component: PostComment},
+    { path: '/serach', name:'PostSerach', component: PostSearch}
   ],
 });
 
