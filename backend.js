@@ -10,6 +10,8 @@ const fs = require('fs')
 const cors = require('cors'); // CORS 패키지 추가
 app.use(cors()); // 모든 요청을 허용 (개발 단계에서만 사용)
 const moment = require('moment')
+// 비밀번호 암호화를 위한 모듈
+const bcrypt = require('bcrypt')
 
 
 // MySQL 연결 설정
@@ -28,6 +30,90 @@ db.connect((err)=>{
         console.log('MySQL 연결 성공!')
     }
 })
+
+
+// 비밀번호를 암호화하는 함수
+async function hashPassword(plainPassword) {
+    const saltRounds = 10; // 솔트 라운드 수 (보안 수준)
+    try {
+        const hashedPassword = await bcrypt.hash(plainPassword, saltRounds)
+        return hashedPassword
+    } catch (error) {
+        console.error('비밀번호 암호화 오류:', error)
+        throw error
+    }
+}
+
+// 클라이언트로 부터 요청이 들어오면 express는 데이터가 json형식인지 몰라서 직접 설정
+app.use(express.json())
+
+// 회원가입
+app.post('/signup', async (req, res)=>{
+    console.log('전달된 사용자 정보:', req.body)
+    const {username, userId, password} = req.body
+
+    const hashedPassword = await hashPassword(password)
+
+    db.query(`
+        insert into board_signup (userName, userId, userPwd)
+        values (?, ?, ?)`,
+        [username, userId, hashedPassword],
+        (err) =>{
+            if(err){
+                console.error(err)
+                return res.status(500).send('서버 오류')
+            }
+            res.status(200).send('회원가입 성공!')
+        }
+    )
+})
+
+// // 입력된 비밀번호와 저장된 해시된 비밀번호를 비교하는 함수
+async function comparePassword(plainPassword, hashedPassword) {
+    try {
+        const isMatch = await bcrypt.compare(plainPassword, hashedPassword)
+        return isMatch
+    } catch (error) {
+        console.error('비밀번호 비교 오류:', error)
+        throw error
+    }
+}
+
+// 로그인
+app.post('/login', async (req, res)=>{
+    console.log('받아온 아이디 비밀번호', req.body)
+    const {userId, password} = req.body
+
+    // 비동기 처리 작업을 위해 Promise 사용
+    const result = await new Promise((resolve, reject) =>{
+        db.query(`
+            select usernum, userName, userId, userPwd
+            from board_signup
+            where userId = ?`,
+            [userId],
+            (err, result)=>{
+                if(err){
+                    console.error('사용자 찾기 오류',err)
+                    reject('서버 오류')
+                }
+                else{
+                    resolve(result)
+                }
+            }
+        )
+    })
+    if(result.length === 0){
+        return res.status(404).send('사용자를 찾을 수 없습니다.')
+    }
+
+    // 2. 비밀번호 비교
+    const isMatch = await comparePassword(password, result[0].userPwd);
+    if (!isMatch) {
+      return res.status(400).send('비밀번호가 일치하지 않습니다.');
+    }
+    res.status(200).send('로그인 성공이다 이 자식아')
+})
+
 
 // 간단한 라우트 추가
 // 메인 화면(PostList)에 데이터를 가져오기
@@ -65,9 +151,6 @@ app.get('/main/:query', (req, res)=>{
         }
     )
 })
-
-// 클라이언트로 부터 요청이 들어오면 express는 데이터가 json형식인지 몰라서 직접 설정
-app.use(express.json())
 
 // Multer 설정 (파일 업로드)
 const storage = multer.diskStorage({

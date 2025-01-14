@@ -30,7 +30,8 @@
           <label v-if="form.files.length>0">첨부파일</label>
           <ul>
               <li v-for="(file, index) in form.files" :key="index">
-                <a :href="file.fileUrl" target="_blank">{{ file.fileName }}</a> 
+                <!-- 업로드된 파일 로컬로 다운로드 -->
+                <a :href="file.fileUrl" :download="file.fileName" target="_blank">{{ file.fileName }}</a> 
                 ({{formatFileSize(file.fileSize)}})
               </li>
           </ul>

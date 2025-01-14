@@ -1,6 +1,11 @@
 <template>
   <div class="post-list-container">
-    <h1>게시글 목록</h1><br>
+    <div class="userPage">
+      <router-link :to="{name: 'PostSignup'}" class="user-btn">회원가입</router-link>
+      <router-link :to="{name: 'PostLogin'}" class="user-btn">로그인</router-link>
+    </div>
+
+    <h1>게시글 목록</h1>
     <!-- 작성하기 버튼을 누르면 작성 폼으로 이동하는 라우터 등록 -->
     <router-link :to="{ name: 'PostForm' }" class="write-btn">작성하기</router-link>
     
@@ -202,5 +207,33 @@ h1 {
   .pagination {
     flex-direction: column;
   }
+}
+
+
+/* 로그인 회원가입 */
+.userPage {
+    position: absolute;
+    top: 10px;
+    right: 20px;
+}
+
+.user-btn {
+display: inline-block;
+margin: 0 10px;
+padding: 10px 20px;
+border: 1px solid #007bff;
+border-radius: 5px;
+background-color: #007bff;
+color: white;
+text-decoration: none;
+font-size: 14px;
+font-weight: bold;
+cursor: pointer;
+transition: background-color 0.3s ease;
+}
+
+.user-btn:hover {
+background-color: #0056b3;
+border-color: #0056b3;
 }
 </style>
