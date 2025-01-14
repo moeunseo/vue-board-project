@@ -78,7 +78,7 @@ export default {
     // 파일 선택 메소드
     fileUpload(event){
       // 업로드한 파일 배열 형식으로 저장
-      this.form.files = Array.from(event.target.files)
+      this.form.files = [...this.form.files, ...Array.from(event.target.files)]
     },
     removeFile(index) {
     // 특정 파일 제거
@@ -120,7 +120,7 @@ export default {
       }
     }
   }
-};
+}
 </script>
 
 <style scoped>

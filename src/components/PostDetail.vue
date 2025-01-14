@@ -5,20 +5,20 @@
     <!-- 목록으로 돌아가기 -->
     <router-link :to="{name: 'Home'}" class="list-btn">목록</router-link>
 
-    <!-- 유효성 검사 -->
-    <label v-if="errorMsg && showError" class="errorMsg">{{errorMsg}}</label>
-
     <!-- 게시글 수정/완료 폼 -->
     <form @submit.prevent="toggleEditMode($route.params.id)">
       <div class="input-group">
         <label for="title">제목</label>
-        <input type="text" id="title" placeholder="제목을 입력하세요" v-model="title" :readonly="isEditMode">
+        <input type="text" id="title" placeholder="제목을 입력하세요" v-model="form.title" :readonly="isEditMode">
       </div>
 
       <div class="input-group">
         <label for="content">내용</label>
-        <textarea id="content" rows="10" placeholder="내용을 입력하세요" v-model="content" :readonly="isEditMode"></textarea>
+        <textarea id="content" rows="10" placeholder="내용을 입력하세요" v-model="form.content" :readonly="isEditMode"></textarea>
       </div>
+
+      <!-- 유효성 검사 -->
+      <label v-if="errorMsg && showError" class="errorMsg">{{errorMsg}}</label>
 
       <div>
         <label for="updateTime">작성 시간</label>
@@ -26,20 +26,35 @@
       </div>
 
       <div class="fileData">
-          <label v-if="files.length>0">첨부파일</label>
+        <div v-if="isEditMode">
+          <label v-if="form.files.length>0">첨부파일</label>
           <ul>
-              <li v-for="(file, index) in files" :key="index">
-                  <a :href="file.fileUrl" target="_blank">{{ file.fileName }}</a> 
-                  ({{ formatFileSize(file.fileSize) }})
+              <li v-for="(file, index) in form.files" :key="index">
+                <a :href="file.fileUrl" target="_blank">{{ file.fileName }}</a> 
+                ({{formatFileSize(file.fileSize)}})
               </li>
           </ul>
+        </div>
+
+      <!-- 수정하기 모드일 때 -->
+        <div v-else>
+          <label for="file" class="editFile">첨부파일</label>
+          <input type="file" id="file" @change="fileEdit" class="hidden-file" multiple>
+          <ul>
+              <li v-for="(file, index) in form.files" :key="index">        
+                <a :href="file.fileUrl" target="_blank">{{ file.fileName }}</a> 
+                ({{formatFileSize(file.fileSize)}})
+                <button type="button" @click="removeFiles(index)">삭제</button>
+              </li>
+          </ul>
+        </div>
       </div>
 
       <div class="button-group">
         <div>
           <!-- 수정/완료 버튼 -->
           <button type="submit">{{isEditMode ? '수정하기' : '완료하기'}}</button>
-          <button class="delete-btn" @click="deleteBoard($route.params.id)">삭제하기</button>
+          <button type="button" class="delete-btn" @click="deleteBoard($route.params.id)">삭제하기</button>
         </div>
       </div>
     </form>
@@ -62,29 +77,41 @@ export default {
     },
     data(){
         return {
+          form:{
             title: '',
             content: '',
+            files: []
+          },
             updateTime: '',
             showError: false,
             isEditMode: true, // true일 때 읽기 모드
             boardId: this.$route.params.id, // 파라미터 값 받아옴
-            files: []
         }
     },
     // 상세보기 페이지로 넘어오면서 게시글에 대한 데이터들을 화면에 렌더링 하기 위함
     mounted(){
+      if(!this.boardId){
+        alert('유효하지 않은 게시글입니다.')
+        this.$router.push({name: 'Home'})
+        return
+      }
       this.boardDetail(this.boardId)
     },
     // 수정할 때도 유효성 검사 진행
     computed: {
     errorMsg() {
-      if (this.title === '' || this.content === '') {
-        return '제목 내용을 모두 입력해주세요!'
+      const errors = [];
+      if (this.form.title.trim() === "") {
+        errors.push("제목을 입력해주세요.");
       }
-      return ''
+      if (this.form.content.trim() === "") {
+        errors.push("내용을 입력해주세요.");
+      }
+      return errors.join("\n");
     }
   },
   methods:{
+    // 파일 크기 지정
     formatFileSize(size) {
         const units = ['bytes', 'KB', 'MB'];
         let i = 0;
@@ -101,8 +128,8 @@ export default {
       .then(response =>{
         console.log('진짜 빡치네',response.data)
         const post = response.data;
-        this.title = post.title // 받아온 데이터로 title 설정
-        this.content = post.content // 받아온 데이터로 content 설정
+        this.form.title = post.title // 받아온 데이터로 title 설정
+        this.form.content = post.content // 받아온 데이터로 content 설정
           
         // 받은 날짜를 원하는 형식으로 변환
         // yyyy/mm/dd/h:m
@@ -116,11 +143,11 @@ export default {
         // 첨부파일 뿌려주기
         console.log(post.files.length)
         if(post.files && post.files.length > 0){
-          this.files = post.files
+          this.form.files = post.files
           console.log('받아온 파일', this.files)
         }
         else{
-          this.files = []
+          this.form.files = []
         }
       })
       .catch (error =>{
@@ -145,41 +172,87 @@ export default {
         })
       }
     },
-      //게시글 수정
-      // 게시글 수정 첨부파일은 일단 그대로,,
-      toggleEditMode(boardId){
-        if(this.errorMsg){
-          this.showError = true
-          return 
-        }
 
-        // 현재 플래그가 true라면 false로 변경
-        // 수정/완료하기 버튼 여부
-        if(this.isEditMode){
-          this.isEditMode = false
-        }
+    // 게시글 수정 중 파일 삭제
+    removeFiles(index){
+      const deleteFile = this.form.files[index]
 
-        else{
-          const editCheck = confirm('게시글을 수정하겠습니까?')
-          if(editCheck){
-            axios
-            // 수정할 땐 어느 게시글인지, 변경된 제목과 내용을 같이 보낸다.
-            .put(`http://localhost:3000/detail/${boardId}`, {
-              title: this.title,
-              content: this.content
-            })
-            .then(response =>{
-              console.log(response.data, '수정 완료')
-              this.isEditMode = true
-              alert('수정이 완료되었습니다.')
-            })
-            .catch(err =>{
-              console.error('게시글 수정 오류', err)
-            })
+      // db에 저장된 파일 목록이라면
+      if(deleteFile.fileId){
+        axios
+        .delete('http://localhost:3000/delete/file', {data: {deleteFile: deleteFile}})
+        .then(response =>{
+          console.log('삭제할 파일: ', deleteFile)
+          console.log(response.data, '데이터 삭제 완료')
+          this.form.files.splice(index, 1)
+        })
+        .catch(err =>{
+          console.error('파일 삭제 오류', err)
+        })
+      }
+      else{
+        this.form.files.splice(index, 1);
+      }
+    },
+
+    // 수정할 게시글에 파일 추가
+    fileEdit(event){
+      const newFile = Array.from(event.target.files).map(file =>{
+        return{
+          fileName: file.name,
+          fileUrl: URL.createObjectURL(file), // 브라우저에서 사용하는 임시 url
+          fileSize: file.size,
+          rawFile: file
+        }
+      })
+      this.form.files = [...this.form.files, ...newFile]
+      console.log('추가된 파일', this.form.files)
+    },
+
+    //게시글 수정
+    toggleEditMode(boardId){
+      if(this.errorMsg){
+        this.showError = true
+        return 
+      }
+
+      // 현재 플래그가 true라면 false로 변경
+      // 수정/완료하기 버튼 여부
+      if(this.isEditMode){
+        this.isEditMode = false
+      }
+
+      else{
+        const editCheck = confirm('게시글을 수정하겠습니까?')
+        if(editCheck){
+          const formData = new FormData()
+
+          formData.append("title", this.form.title)
+          formData.append("content", this.form.content)
+
+          this.form.files.forEach((file)=>{
+            formData.append('files', file.rawFile || file)
+          })
+
+          for (let [key, value] of formData.entries()) {
+            console.log('정신 차려', key, value);
           }
+
+          axios
+          // 수정할 땐 어느 게시글인지, 변경된 제목과 내용을 같이 보낸다.
+          .put(`http://localhost:3000/detail/${boardId}`, formData)
+          .then(response =>{
+            console.log(response.data, '수정 완료')
+            this.isEditMode = true
+            alert('수정이 완료되었습니다.')
+          })
+          .catch(err =>{
+            console.error('게시글 수정 오류', err)
+          })
         }
       }
     }
+  }
 }
 </script>
 
@@ -312,14 +385,36 @@ label {
 }
 
 /* 첨부파일 */
-.fileData{
+.fileData div{
   display: flex;
 }
 
 .fileData label{
   font-size: 18px;
-  color: #003c7d;
   margin-top: 10px;
+}
+
+.fileData button{
+  background-color: red;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.editFile{
+  border: 1px solid #007bff;
+  border-radius: 5px;
+  font-weight: bold;
+  color: white;
+  background-color: #007bff;
+  padding: 8px 18px;
+  cursor: pointer;
+}
+
+.hidden-file{
+  display: none;
 }
 
 /* 에러메시지 여부 */

@@ -32,7 +32,7 @@ db.connect((err)=>{
 // 간단한 라우트 추가
 // 메인 화면(PostList)에 데이터를 가져오기
 app.get('/main', (req, res) => {
-    // 작성이 최신순인순으로 불러오기
+    // 작성이 최신순으로 불러오기
     db.query('SELECT *FROM board order by board_current_time desc', 
         (err, results)=>{
         if(err){
@@ -164,7 +164,7 @@ app.post('/write', upload.array('files'), (req, res) => {
 app.get('/detail/:id', (req, res) => {
     const postId = req.params.id
     db.query(`
-        select b.board_title, b.board_content, b.board_update_time, b.board_current_time, f.file_name, f.file_url, f.file_size 
+        select b.board_title, b.board_content, b.board_update_time, b.board_current_time, f.file_id, f.file_name, f.file_url, f.file_size 
         from board b left join board_file f
         on b.board_id = f.board_id
         where b.board_id = ?`,
@@ -203,6 +203,7 @@ app.get('/detail/:id', (req, res) => {
         results.forEach(result =>{
             if(result.file_name){
                 response.files.push({
+                    fileId: result.file_id,
                     fileName: result.file_name,
                     fileUrl: result.file_url,
                     fileSize: result.file_size
@@ -233,7 +234,7 @@ app.delete('/detail/:id', (req, res)=>{
                 [postId],
                 (err, results) =>{
                     if(err){
-                        console.err('DB 삭제 중 오류 발생', err)
+                        console.error('DB 삭제 중 오류 발생', err)
                         return res.status(500).send('서버 오류')
                     }
 
@@ -257,11 +258,12 @@ app.delete('/detail/:id', (req, res)=>{
 })
 
 // 게시글 수정
-app.put('/detail/:id', (req, res)=>{
+app.put('/detail/:id', upload.array('files'),(req, res)=>{
     const postId = req.params.id
     const {title, content} = req.body
 
-    console.log(postId, title, content)
+    console.log('받아온 데이터들: ',postId, title, content)
+    console.log('==', req.files)
 
     if (!title || !content) {
         return res.status(400).send('제목과 내용은 필수입니다.');
@@ -273,10 +275,76 @@ app.put('/detail/:id', (req, res)=>{
             if(err){
                 return res.status(500).send('서버 오류')
             }
-            res.status(200).send('게시글 수정 완료!')
+        
+            // 파일이 업로드 됐을 때만 실행
+            if(req.files && req.files.length > 0){
+                const fileQueries = req.files.map(file =>{
+                    return new Promise((resolve, reject) =>{
+                        const filePath = file.path.replace(/\\/g, '/')
+                        const fileQuery = 'INSERT INTO board_file (file_name, file_size, file_url, board_id) values (?,?,?,?)'
+                        db.query(fileQuery, [file.filename, file.size, filePath, postId],
+                            (err)=>{
+                                if(err){
+                                    reject('첨부파일 삽입 오류')
+                                }
+                                else{
+                                    resolve()
+                                }
+                            }
+                        )
+                    })
+                })
+                Promise.all(fileQueries)
+                .then(()=>{
+                    res.status(200).send('파일 삽입 완료')
+                })
+                .catch(error =>{
+                    res.status(500).send(error)
+                })
+            }
+            else{
+                res.status(200).send('파일 삽입 완료')
+            }
         }
     )
 })
+
+// 게시글 수정 중에 파일 삭제
+app.delete('/delete/file', (req,res) =>{
+    console.log('삭제할 파일', req.body)
+    const {fileId, fileUrl} = req.body.deleteFile
+
+    console.log('id', fileId)
+    console.log('url', fileUrl)
+
+    db.query('delete from board_file where file_id = ?',
+        [fileId],
+        (err, result)=>{
+            if(err) return res.status(500).send('파일 삭제 오류', err)
+            
+            console.log('삭제할 파일: ', result)
+            // 만약 삭제할 파일이 있다면
+            if(result.affectedRows > 0){
+                console.log('ㅎ2')
+                const filePath = path.resolve(fileUrl)
+                fs.unlink(filePath, (err)=>{
+                    if(err){
+                        console.error(`파일 삭제 실패: ${filePath}`, err)
+                        return res.status(500).send('파일 삭제 실패')
+                    }
+                    else{
+                        console.log(`파일 삭제 성공: ${filePath}`)
+                        res.status(200).send('업로도된 파일 삭제 완료')
+                    }
+                })
+            }
+            else{
+                res.status(404).send('파일 찾을 수 없습니다.')
+            }
+        }
+    )
+})
+
   
 // 댓글 목록 불러오기
 app.get('/comment/:id', (req, res)=>{
