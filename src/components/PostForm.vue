@@ -104,9 +104,13 @@ export default {
           formData.append("files", file)
         })
 
-        axios.post("http://localhost:3000/write", formData,
+        axios.post("https://localhost:3000/write", formData,
         // axios는 json형식을 자동 파싱을 지원해주기에 명시할 필요는 없지만 알고 있자
-        {headers: {'Content-Type': 'multpart/form-data'}})
+        {headers: {
+          'Content-Type': 'multpart/form-data',
+          // 로컬 스토리지에 저장된 사용자의 토큰 값을 헤더로 전달
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }})
         .then(response =>{
           console.log(response.data)
           alert('작성 완료되었습니다.')
@@ -114,6 +118,7 @@ export default {
           this.$router.push({name: 'Home'})
         })
         .catch(error =>{
+          console.log('토큰', localStorage.getItem('token'))
           console.error('게시글 작성 오류: ', error)
           this.showError = true
         })

@@ -13,6 +13,16 @@ const moment = require('moment')
 // 비밀번호 암호화를 위한 모듈
 const bcrypt = require('bcrypt')
 
+// 보안 강화
+const https = require('https')
+const options = {
+    key: fs.readFileSync('localhost.key'),
+    cert: fs.readFileSync('localhost.crt')
+}
+  app.use(cors({
+    origin: 'https://localhost:8081',  // 클라이언트의 URL을 정확하게 지정
+    // credentials: true,  // 쿠키를 포함한 요청을 허용
+  }));
 
 // MySQL 연결 설정
 const db = mysql.createConnection({
@@ -80,40 +90,58 @@ async function comparePassword(plainPassword, hashedPassword) {
 }
 
 // 로그인
+// 토근 사용
+const jwt = require('jsonwebtoken')
+const secretKey = 'vuetest'
+
 app.post('/login', async (req, res)=>{
     console.log('받아온 아이디 비밀번호', req.body)
     const {userId, password} = req.body
 
     // 비동기 처리 작업을 위해 Promise 사용
-    const result = await new Promise((resolve, reject) =>{
-        db.query(`
-            select usernum, userName, userId, userPwd
-            from board_signup
-            where userId = ?`,
+    try {
+        // 데이터베이스에서 사용자 정보 조회
+        const result = await new Promise((resolve, reject) => {
+          db.query(`
+            SELECT usernum, userName, userId, userPwd
+            FROM board_signup
+            WHERE userId = ?`,
             [userId],
-            (err, result)=>{
-                if(err){
-                    console.error('사용자 찾기 오류',err)
-                    reject('서버 오류')
-                }
-                else{
-                    resolve(result)
-                }
-            }
-        )
-    })
-    if(result.length === 0){
-        return res.status(404).send('사용자를 찾을 수 없습니다.')
+            (err, result) => {
+              if (err) {
+                console.error('사용자 찾기 오류:', err);
+                reject('서버 오류');
+              } else {
+                resolve(result);
+              }
+            })
+        })
+    
+        if (result.length === 0) {
+          return res.status(404).send('사용자를 찾을 수 없습니다.');
+        }
+    
+        // 비밀번호 비교
+        const isMatch = await comparePassword(password, result[0].userPwd);
+        if (!isMatch) {
+          return res.status(400).send('비밀번호가 일치하지 않습니다.');
+        }
+    
+        // JWT 토큰 발급
+        const token = jwt.sign({
+            usernum: result[0].usernum, 
+            userName: result[0].userName, 
+            userId: result[0].userId 
+        },secretKey, { expiresIn: '1h' })  // 토큰 유효 기간 (1시간)
+    
+        // jwt 토큰 응답 전송
+        res.status(200).json({token})
+    } 
+    catch (error) {
+        console.error('로그인 처리 오류:', error);
+        res.status(500).send('서버 오류');
     }
-
-    // 2. 비밀번호 비교
-    const isMatch = await comparePassword(password, result[0].userPwd);
-    if (!isMatch) {
-      return res.status(400).send('비밀번호가 일치하지 않습니다.');
-    }
-    res.status(200).send('로그인 성공이다 이 자식아')
 })
-
 
 // 간단한 라우트 추가
 // 메인 화면(PostList)에 데이터를 가져오기
@@ -183,8 +211,28 @@ const upload = multer({
     }
 })
 
+
+// 토큰 유효성 체크
+const authenticateJWT = (req, res, next) => {
+    const token = req.headers['authorization']
+
+    if (!token) {
+        return next() // 인증 없이 넘어감
+    }
+
+    jwt.verify(token.split(' ')[1], secretKey, (err, user) => {
+    if (err) {
+        console.error('오류가 나는 이유', err)
+        return res.status(403).send('토큰이 유효하지 않습니다.');
+    }
+    req.user = user  // 검증된 사용자 정보 저장
+    next()  // 요청을 처리할 수 있도록 이어짐
+    })
+}
+
+
 // 게시글 작성
-app.post('/write', upload.array('files'), (req, res) => {
+app.post('/write', authenticateJWT, upload.array('files'), (req, res) => {
     console.log('받아온 제목과 내용', req.body)
     console.log('받아온 파일', req.files)
 
@@ -198,10 +246,13 @@ app.post('/write', upload.array('files'), (req, res) => {
         return res.status(400).send('제목과 내용은 필수입니다.');
     }
 
+    const usernum = req.user.usernum
+    console.log('로그인한 유저', usernum)
+
     // board INSERT
     db.query(
-        'INSERT INTO board (board_title, board_content) VALUES (?, ?)',
-        [title, content],
+        'INSERT INTO board (board_title, board_content, userNum) VALUES (?, ?, ?)',
+        [title, content, usernum],
         (err, result) => {
             if (err) {
                 return res.status(500).send('서버 오류');
@@ -244,47 +295,43 @@ app.post('/write', upload.array('files'), (req, res) => {
 });
 
 // 게시글 상세보기 페이지 이동
-app.get('/detail/:id', (req, res) => {
+app.get('/detail/:id', authenticateJWT,(req, res) => {
     const postId = req.params.id
-    db.query(`
-        select b.board_title, b.board_content, b.board_update_time, b.board_current_time, f.file_id, f.file_name, f.file_url, f.file_size 
+    console.log('~~~~~~~~~~~~', req.user)
+    if (!req.user) {
+        db.query(`
+        select b.userNum, b.board_title, b.board_content, b.board_update_time, b.board_current_time, f.file_id, f.file_name, f.file_url, f.file_size 
         from board b left join board_file f
         on b.board_id = f.board_id
-        where b.board_id = ?`,
-        [postId],
-        (err, results)=>{
-        if(err){
+        where b.board_id = ?`, 
+        [postId], 
+        (err, results) => {
+        if (err) {
             return res.status(500).send('서버 오류')
         }
-
-        // 잘못된 url, 페이지가 존재하지 않는 경우, 404를 띄어주는 것이 좋다.
-        if(results.length === 0){
+    
+        if (results.length === 0) {
             return res.status(404).send('게시글을 찾을 수 없습니다.')
         }
-        console.log('반환 결과: ', results)
-        // json배열의 형태가 아닌 객체 형태로 응답
-        // 배열의 형태로 보내면 앞단에서 데이터를 가져올 때 post[0].board~
-        // 이런식으로 가져와야해서 애초부터 객체로 응답!
-        const post = results[0]
-        const updatedTime = new Date(post.board_update_time)
-        const createdTime = new Date(post.board_current_time)
-        
-        const timeDifference = updatedTime.getTime() - createdTime.getTime();
-        console.log('timeDifference (ms):', timeDifference);  // 차이 출력
-        
-        const status = timeDifference !== 0? '(수정됨)' : ''
-
-        // 게시글과 파일을 같이 보내기 위해해
+    
+        const post = results[0];
+        const updatedTime = new Date(post.board_update_time);
+        const createdTime = new Date(post.board_current_time);
+    
+        const timeDifference = updatedTime.getTime() - createdTime.getTime()
+        const status = timeDifference !== 0 ? '(수정됨)' : ''
+    
         const response = {
+            userNum: post.userNum,
             title: post.board_title,
             content: post.board_content,
             updatedAt: post.board_update_time,
             status: status,
             files: []
         }
-
-        results.forEach(result =>{
-            if(result.file_name){
+    
+        results.forEach(result => {
+            if (result.file_name) {
                 response.files.push({
                     fileId: result.file_id,
                     fileName: result.file_name,
@@ -293,21 +340,69 @@ app.get('/detail/:id', (req, res) => {
                 })
             }
         })
-        // ...: 스프레드 연산자
-        // 기존 데이터 + 필요한 값을 덧붙이기 위해 사용
-        console.log('====', response)
         res.json(response)
-    })
+        })
+    }
+    else {
+        db.query(`
+          select b.userNum, b.board_title, b.board_content, b.board_update_time, b.board_current_time, f.file_id, f.file_name, f.file_url, f.file_size 
+          from board b left join board_file f
+          on b.board_id = f.board_id
+          where b.board_id = ?`, 
+          [postId], 
+          (err, results) => {
+            if (err) {
+              return res.status(500).send('서버 오류')
+            }
+      
+            if (results.length === 0) {
+              return res.status(404).send('게시글을 찾을 수 없습니다.')
+            }
+      
+            const post = results[0];
+            const updatedTime = new Date(post.board_update_time)
+            const createdTime = new Date(post.board_current_time)
+      
+            const timeDifference = updatedTime.getTime() - createdTime.getTime()
+            const status = timeDifference !== 0 ? '(수정됨)' : ''
+      
+            const response = {
+              userNum: post.userNum,
+              title: post.board_title,
+              content: post.board_content,
+              updatedAt: post.board_update_time,
+              status: status,
+              files: []
+            }
+      
+            results.forEach(result => {
+              if (result.file_name) {
+                response.files.push({
+                  fileId: result.file_id,
+                  fileName: result.file_name,
+                  fileUrl: result.file_url,
+                  fileSize: result.file_size
+                })
+              }
+            })
+            res.json(response);
+          })
+      } 
   })
 
+
+const fsPromises = require('fs').promises
+
 // 게시글 삭제
-app.delete('/detail/:id', (req, res)=>{
+app.delete('/detail/:id', authenticateJWT, (req, res)=>{
     const postId = req.params.id
+
+    // 삭제 권한 등록
 
     // DB에서 첨부파일 URL 가져오기
     db.query('select file_url from board_file where board_id = ?',
         [postId], 
-        (err, resultsDB)=>{
+        async (err, resultsDB)=>{
             if (err){
                 return res.status(500).send('서버 오류')
             }                
@@ -315,7 +410,7 @@ app.delete('/detail/:id', (req, res)=>{
             // 게시글 삭제
             db.query('delete from board where board_id = ?',
                 [postId],
-                (err, results) =>{
+                async (err, results) =>{
                     if(err){
                         console.error('DB 삭제 중 오류 발생', err)
                         return res.status(500).send('서버 오류')
@@ -328,66 +423,93 @@ app.delete('/detail/:id', (req, res)=>{
             )
 
             // 서버에 업로드된 파일 삭제
-            resultsDB.forEach((file)=>{
+            const fileDeletePromises = resultsDB.map(async(file)=>{
                 const filePath = path.resolve(file.file_url)
-                fs.unlink(filePath, (err)=>{
-                    if(err) console.error(`파일 삭제 실패: ${filePath}`, err)
-                    else console.log(`파일 삭제 성공: ${filePath}`)
-                })
+                console.log(filePath)
+                try{
+                    await fs.unlink(filePath)
+                    console.log(`파일 삭제 성공: ${filePath}`)
+                } catch(err){
+                    console.error(`파일 삭제 실패: ${filePath}`)
+                }
             })
-            res.status(200).send('게시글 삭제 완료')
+
+            Promise.all(fileDeletePromises)
+            .then(()=>{
+                res.status(200).send('게시글 삭제 완료')
+            })
+            .catch(()=>{
+                res.status(500).send('파일 삭제 중 오류')
+            })
         }
     )
 })
 
 // 게시글 수정
-app.put('/detail/:id', upload.array('files'),(req, res)=>{
+app.put('/detail/:id', authenticateJWT, upload.array('files'),(req, res)=>{
     const postId = req.params.id
-    const {title, content} = req.body
+    const {id, title, content} = req.body
 
-    console.log('받아온 데이터들: ',postId, title, content)
+    console.log('받아온 데이터들: ',postId, id, title, content)
     console.log('==', req.files)
 
     if (!title || !content) {
         return res.status(400).send('제목과 내용은 필수입니다.');
     }
 
-    db.query('update board set board_title = ?, board_content = ?, board_update_time = now() where board_id = ?',
-        [title, content, postId],
-        (err) =>{
+    // 수정 권한 등록
+    db.query('select userNum from board where board_id = ?',
+        [postId],
+        (err, result)=>{
             if(err){
+                console.error('사용자 번호 가져오면서 에러 발생', err)
                 return res.status(500).send('서버 오류')
             }
-        
-            // 파일이 업로드 됐을 때만 실행
-            if(req.files && req.files.length > 0){
-                const fileQueries = req.files.map(file =>{
-                    return new Promise((resolve, reject) =>{
-                        const filePath = file.path.replace(/\\/g, '/')
-                        const fileQuery = 'INSERT INTO board_file (file_name, file_size, file_url, board_id) values (?,?,?,?)'
-                        db.query(fileQuery, [file.filename, file.size, filePath, postId],
-                            (err)=>{
-                                if(err){
-                                    reject('첨부파일 삽입 오류')
-                                }
-                                else{
-                                    resolve()
-                                }
-                            }
-                        )
-                    })
-                })
-                Promise.all(fileQueries)
-                .then(()=>{
-                    res.status(200).send('파일 삽입 완료')
-                })
-                .catch(error =>{
-                    res.status(500).send(error)
-                })
+
+            const board = result[0]
+            console.log('^^^^^^^^^^^^^^^^^^^^',board.userNum, req.user.usernum)
+            if(board.userNum !== req.user.usernum){
+                return res.status(403).send('수정 권한이 없습니다.')
             }
-            else{
-                res.status(200).send('파일 삽입 완료')
-            }
+
+            db.query('update board set board_title = ?, board_content = ?, board_update_time = now() where board_id = ?',
+                [title, content, postId],
+                (err) =>{
+                    if(err){
+                        return res.status(500).send('서버 오류')
+                    }
+                
+                    // 파일이 업로드 됐을 때만 실행
+                    if(req.files && req.files.length > 0){
+                        const fileQueries = req.files.map(file =>{
+                            return new Promise((resolve, reject) =>{
+                                const filePath = file.path.replace(/\\/g, '/')
+                                const fileQuery = 'INSERT INTO board_file (file_name, file_size, file_url, board_id) values (?,?,?,?)'
+                                db.query(fileQuery, [file.filename, file.size, filePath, postId],
+                                    (err)=>{
+                                        if(err){
+                                            reject('첨부파일 삽입 오류')
+                                        }
+                                        else{
+                                            resolve()
+                                        }
+                                    }
+                                )
+                            })
+                        })
+                        Promise.all(fileQueries)
+                        .then(()=>{
+                            res.status(200).send('파일 삽입 완료')
+                        })
+                        .catch(error =>{
+                            res.status(500).send(error)
+                        })
+                    }
+                    else{
+                        res.status(200).send('파일 삽입 완료')
+                    }
+                }
+            )
         }
     )
 })
@@ -433,7 +555,7 @@ app.delete('/delete/file', (req,res) =>{
 app.get('/comment/:id', (req, res)=>{
     const boardId = req.params.id
     db.query(`
-        select comment_id, comment_content, created_at, updated_at 
+        select comment_id, comment_content, created_at, updated_at, userNum 
         from comments where board_id = ?
         order by created_at desc`,
         [boardId],
@@ -460,30 +582,39 @@ app.get('/comment/:id', (req, res)=>{
 })
 
 // 댓글 작성
-app.post('/comment/:id', (req,res)=>{
+app.post('/comment/:id', authenticateJWT,(req,res)=>{
     const {newComment, boardId} = req.body
+
+    console.log('받아온 값', newComment, boardId)
+    console.log('토큰 값', req.user)
 
     if(!newComment){
         return res.status(400).send('제목과 내용은 필수입니다.')
     }
 
-    db.query('insert into comments (comment_content, board_id) values (?, ?)',
-        [newComment, boardId],
+    db.query('insert into comments (comment_content, board_id, userNum) values (?, ?, ?)',
+        [newComment, boardId, req.user.usernum],
         (err) =>{
             if(err){
                 console.error('무슨오류야?', err)
                 return res.status(500).send('서버 오류')
             }
-            res.status(201).send('게시글 작성 완료');
+            res.status(200).send('게시글 작성 완료');
         }
     )
 })
 // 댓글 삭제
-app.delete('/comment/:id', (req, res)=>{
+app.delete('/comment/:id', authenticateJWT, (req, res)=>{
     const boardId = req.params.id
-    const commentId = req.body.commentId
+    const {commentId, userId} = req.body
 
+    console.log('어떤 값들인지', req.body)
     console.log('=========', boardId, commentId)
+    console.log('잘 받아와??', req.user)
+
+    if(req.user.usernum !== userId){
+        return res.status(403).send('댓글 삭제 권한이 없습니다.')
+    }
 
     db.query('delete from comments where comment_id=? and board_id=?',
         [commentId, boardId],
@@ -500,16 +631,22 @@ app.delete('/comment/:id', (req, res)=>{
         }
     )
 })
+
 // 댓글 수정
-app.put('/comment/:id', (req, res)=>{
+app.put('/comment/:id', authenticateJWT, (req, res)=>{
     const boardId = req.params.id
-    const {id: commentId, newComment: commentContent} = req.body
+    const {id: commentId, newComment: commentContent, userId} = req.body
 
     console.log(req.body)
     console.log('===========', boardId, commentId, commentContent)
+    console.log('토큰 값 잘 받아왔어?', req.user)
 
     if (!commentContent) {
         return res.status(400).send('내용은 필수입니다.')
+    }
+
+    if(req.user.usernum !== userId){
+        return res.status(403).send('댓글 수정 권한이 없습니다.')
     }
 
     db.query('update comments set comment_content = ?, updated_at = now() where comment_id = ? and board_id = ?',
@@ -530,7 +667,11 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 })
 
-  // 서버 시작
-app.listen(port, () => {
-console.log(`Server is running on http://localhost:${port}`);
-})
+// 서버 시작 http일 때
+// app.listen(port, () => {
+// console.log(`Server is running on http://localhost:${port}`);
+// })
+
+https.createServer(options, app).listen(port, () => {
+    console.log('HTTPS server is running on https://localhost:3000');
+});

@@ -7,6 +7,9 @@
 
     <!-- 게시글 수정/완료 폼 -->
     <form @submit.prevent="toggleEditMode($route.params.id)">
+      <div style="display: none;">
+        <input type="text" v-model="form.userNum" readonly>
+      </div>
       <div class="input-group">
         <label for="title">제목</label>
         <input type="text" id="title" placeholder="제목을 입력하세요" v-model="form.title" :readonly="isEditMode">
@@ -52,7 +55,7 @@
       </div>
 
       <div class="button-group">
-        <div>
+        <div v-if="isAuthor">
           <!-- 수정/완료 버튼 -->
           <button type="submit">{{isEditMode ? '수정하기' : '완료하기'}}</button>
           <button type="button" class="delete-btn" @click="deleteBoard($route.params.id)">삭제하기</button>
@@ -71,6 +74,7 @@
 import axios from "axios"
 // 댓글 컴포넌트 추가
 import PostComment from "@/components/PostComment.vue"
+import jwt_decode from 'jwt-decode';
 export default {
     name: "PostDetail",
     components: {
@@ -79,6 +83,7 @@ export default {
     data(){
         return {
           form:{
+            userNum: null,
             title: '',
             content: '',
             files: []
@@ -87,6 +92,7 @@ export default {
             showError: false,
             isEditMode: true, // true일 때 읽기 모드
             boardId: this.$route.params.id, // 파라미터 값 받아옴
+            isAuthor: false // 게시글 작성자와 로그인한 유저 여부
         }
     },
     // 상세보기 페이지로 넘어오면서 게시글에 대한 데이터들을 화면에 렌더링 하기 위함
@@ -124,14 +130,39 @@ export default {
       },
     // 게시글 db에서 가져오기
     boardDetail(boardId){
+      const token = localStorage.getItem('token')
+      // 토큰 여부
+      const tokenValue = {headers:{}}
+
+      if(token){
+        tokenValue.headers['Authorization'] = `Bearer ${token}`
+      }
+
+      console.log('받아온 토큰', tokenValue)
+
       axios
-      .get(`http://localhost:3000/detail/${boardId}`)
+      .get(`https://localhost:3000/detail/${boardId}`, tokenValue)
       .then(response =>{
         console.log('진짜 빡치네',response.data)
         const post = response.data;
+        this.form.userNum = post.userNum
         this.form.title = post.title // 받아온 데이터로 title 설정
         this.form.content = post.content // 받아온 데이터로 content 설정
-          
+
+        // 현재 로그인된 토큰을 디코딩하여 백엔드에서 받아온 userNum과 같은지 비교
+        if(token){
+          try {
+            const decoded = jwt_decode(token);  // jwt_decode를 호출
+            const userId = decoded.usernum;
+            console.log('로그인한 사용자 num:', userId);
+            if (userId === this.form.userNum) {
+              this.isAuthor = true;
+            }
+          } catch (error) {
+            console.error('토큰 디코딩 오류:', error);
+        }
+      }
+
         // 받은 날짜를 원하는 형식으로 변환
         // yyyy/mm/dd/h:m
         const updatedTime = new Date(post.updatedAt)
@@ -158,10 +189,13 @@ export default {
 
     // 게시글 삭제
     deleteBoard(boardId){
+      const token = localStorage.getItem('token')
       const confirmDelete = confirm('게시글을 삭제하겠습니까?')
       if(confirmDelete){
         axios
-        .delete(`http://localhost:3000/detail/${boardId}`)
+        .delete(`https://localhost:3000/detail/${boardId}`,
+          {headers: {'Authorization': `Bearer ${token}`}}
+        )
         .then(response =>{
           console.log(response.data, '삭제 완료')
           alert('삭제 완료되었습니다.')
@@ -181,7 +215,7 @@ export default {
       // db에 저장된 파일 목록이라면
       if(deleteFile.fileId){
         axios
-        .delete('http://localhost:3000/delete/file', {data: {deleteFile: deleteFile}})
+        .delete('https://localhost:3000/delete/file', {data: {deleteFile: deleteFile}})
         .then(response =>{
           console.log('삭제할 파일: ', deleteFile)
           console.log(response.data, '데이터 삭제 완료')
@@ -224,10 +258,12 @@ export default {
       }
 
       else{
+        const token = localStorage.getItem('token')
         const editCheck = confirm('게시글을 수정하겠습니까?')
         if(editCheck){
           const formData = new FormData()
 
+          formData.append('id', this.form.userNum)
           formData.append("title", this.form.title)
           formData.append("content", this.form.content)
 
@@ -241,7 +277,9 @@ export default {
 
           axios
           // 수정할 땐 어느 게시글인지, 변경된 제목과 내용을 같이 보낸다.
-          .put(`http://localhost:3000/detail/${boardId}`, formData)
+          .put(`https://localhost:3000/detail/${boardId}`, formData,
+            {headers:  {'Authorization': `Bearer ${token}`}}
+          )
           .then(response =>{
             console.log(response.data, '수정 완료')
             this.isEditMode = true

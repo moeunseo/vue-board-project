@@ -35,16 +35,22 @@ methods: {
         // 로그인 처리 로직
         console.log('로그인 시도:', this.formData)
 
+        // 빈 값 입력 시 유효성 검사
+
         axios
-        .post(`http://localhost:3000/login`, this.formData)
+        .post(`https://localhost:3000/login`, this.formData)
         .then(response =>{
             // 로그인 성공 시
             console.log(response.data)
+            // 서버에서 받은 JWT 토큰을 로컬 스토리지에 저장
+            localStorage.setItem('token', response.data.token)
             this.$router.push({name: 'Home'})
         })
         .catch(error =>{
             // 로그인이 실패 시
             alert('존재하지 않은 사용자입니다.')
+            this.formData.userId = ''
+            this.formData.password= ''
             console.error('로그인 오류', error)
         })
     },

@@ -1,13 +1,17 @@
 <template>
   <div class="post-list-container">
-    <div class="userPage">
+    <div class="userPage" v-if="!isLoggedIn">
       <router-link :to="{name: 'PostSignup'}" class="user-btn">회원가입</router-link>
       <router-link :to="{name: 'PostLogin'}" class="user-btn">로그인</router-link>
+    </div>
+    <div class="userPage" v-else>
+      <button type="button" @click="logout" class="user-btn">로그아웃</button>
     </div>
 
     <h1>게시글 목록</h1>
     <!-- 작성하기 버튼을 누르면 작성 폼으로 이동하는 라우터 등록 -->
-    <router-link :to="{ name: 'PostForm' }" class="write-btn">작성하기</router-link>
+     <!-- 로그인한 상태에만 보이게 -->
+    <router-link v-if="isLoggedIn" :to="{ name: 'PostForm' }" class="write-btn">작성하기</router-link>
     
     <!-- 검색하기 -->
      <!-- 자식에서 보내온 에미터를 받음 -->
@@ -54,7 +58,8 @@ export default {
       posts:[],
       itemsPerPage: 10, // 한 페이지에 표시할 데이터 개수
       currentPage: 1,  // 현재 페이지 번호
-      searchWord: ''
+      searchWord: '',
+      isLoggedIn: localStorage.getItem('token') // 로그인 여부
     }
   },
   computed: {
@@ -80,8 +85,8 @@ export default {
     },
     boardAll() {
       const url = this.searchWord ?
-      `http://localhost:3000/main/${this.searchWord}`
-      : `http://localhost:3000/main`
+      `https://localhost:3000/main/${this.searchWord}`
+      : `https://localhost:3000/main`
       
       console.log('검색된 url', url)
       axios.get(url)
@@ -92,6 +97,12 @@ export default {
         .catch(error => {
           console.error('데이터 가져오기 오류', error)
         })
+    },
+    //로그아웃
+    logout(){
+      localStorage.removeItem('token'); // 로컬스토리지에서 토큰 삭제
+      this.isLoggedIn = false; // 로그인 상태 변경
+      this.$router.push({ name: 'Home' }); // 로그인 페이지로 리다이렉트
     }
   }
 }

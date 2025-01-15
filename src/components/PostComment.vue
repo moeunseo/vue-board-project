@@ -3,7 +3,7 @@
         <h3>댓글</h3>
 
         <!-- 댓글 작성 폼 -->
-        <form @submit.prevent="submitComment" class="comment-form">
+        <form @submit.prevent="submitComment" class="comment-form" v-if="isLoggedIn">
             <textarea v-model.trim="newComment" placeholder="댓글을 작성하세요" rows="4"></textarea>
             <label v-if="errorMsg && showError" class="errorMsg">{{errorMsg}}</label>
             <button type="submit" class="submit-btn">댓글 작성</button>
@@ -18,6 +18,7 @@
               <div class="comment-details">
                 <!-- 수정 클릭 여부 -->
                 <p v-if="!comment.editMode" class="comment-text">{{comment.comment_content }}
+                  <span style="display: none;">{{ comment.userNum }}</span>
                   <span class="comment-time">{{formatTimeAgo(comment.updated_at)}}</span>
                   <span class="comment-time">{{comment.status}}</span>
                 </p>
@@ -26,19 +27,22 @@
             </div>
 
             <!-- 각 댓글별 수정/삭제 버튼 -->
-            <div class="comment-actions" v-if="!comment.editMode">
-              <button @click="toggleEditMode(comment)" class="edit-btn">수정</button>
-              <button @click="deleteComment(comment.comment_id)" class="delete-btn">삭제</button>
-            </div>
+             <!-- 내가 작성한 댓글만 표시 -->
+            <div v-if="isUserMode && comment.userNum === this.userNum.usernum">
+              <div class="comment-actions" v-if="!comment.editMode">
+                <button @click="toggleEditMode(comment)" class="edit-btn">수정</button>
+                <button @click="deleteComment(comment.comment_id)" class="delete-btn">삭제</button>
+              </div>
 
             <!-- 수정하기를 할 땐, 해당 댓글 번호와 내용을 함께 보내야 한다. -->
-            <form @submit.prevent="editComment(comment)" v-else>
-              <div class="comment-actions">
-                <button type="submit" class="edit-btn">수정하기</button>
-              </div>
-            </form>
+              <form @submit.prevent="editComment(comment)" v-else>
+                <div class="comment-actions">
+                  <button type="submit" class="edit-btn">수정하기</button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
+      </div>
 
         <!-- 댓글이 없을 때 -->
         <div v-else class="no-comments">
@@ -49,6 +53,7 @@
   
 <script>
 import axios from 'axios'
+import jwt_decode from 'jwt-decode';
 export default {
     name: 'PostComment',
     props: ['id'], // 상세보기 컴포넌트에서 받은 게시글 id값
@@ -58,6 +63,9 @@ export default {
         comments: [],
         showError: false, // 작성 에러메세지 유무
         editMode: false, // 댓글 수정 여부
+        isLoggedIn: localStorage.getItem('token'),
+        isUserMode: false,
+        userNum: null
       }
     },
     mounted(){
@@ -75,10 +83,25 @@ export default {
       // 댓글 목록 조회
       commentAll(){
         axios
-        .get(`http://localhost:3000/comment/${this.id}`)
+        .get(`https://localhost:3000/comment/${this.id}`)
         .then(response =>{
             console.log('받아온 댓글: ', response.data)
-            this.comments = response.data
+            this.comments = response.data // 댓글 배열 저장 json
+
+            if(this.isLoggedIn){
+              try {
+                  this.userNum = jwt_decode(this.isLoggedIn)  // jwt_decode를 호출
+                  const userId = this.userNum.usernum
+
+                  this.comments.forEach(comment=>{
+                    if(userId === comment.userNum){
+                      this.isUserMode = true
+                    }
+                  })
+              } catch (error) {
+                  console.error('토큰 디코딩 오류:', error)
+        }
+      }
         })
         .catch(error =>{
             console.error('데이터 가져오기 오류', error)
@@ -99,7 +122,9 @@ export default {
         }
 
         axios
-        .post(`http://localhost:3000/comment/${this.id}`, commentData)
+        .post(`https://localhost:3000/comment/${this.id}`, commentData,
+          {headers: {'Authorization': `Bearer ${this.isLoggedIn}`}}
+        )
         .then(response =>{
             console.log('작성한 댓글: ', response.data)
             alert('댓글 작성 완료되었습니다.')
@@ -147,15 +172,23 @@ export default {
         console.log('-----------', comment.comment_id)
         console.log('----------', comment.comment_content)
 
+        this.userNum = jwt_decode(this.isLoggedIn)  // jwt_decode를 호출
+        const userId = this.userNum.usernum
+
         const editComment = {
           id: comment.comment_id,
-          newComment: comment.comment_content
+          newComment: comment.comment_content,
+          userId
         }
 
         const editCheck = confirm('수정하시겠습니까?')
         if(editCheck){
           axios
-          .put(`http://localhost:3000/comment/${this.id}`, editComment)
+          .put(`https://localhost:3000/comment/${this.id}`, editComment,
+            {
+              headers: {'Authorization': `Bearer ${this.isLoggedIn}`}
+            }
+          )
           .then(response =>{
             console.log('수정된 댓글',response.data)
             alert('수정 완료되었습니다.')
@@ -176,10 +209,14 @@ export default {
 
         const checkComment = confirm('댓글을 삭제하시겠습니까?')
         if(checkComment){
+          this.userNum = jwt_decode(this.isLoggedIn)  // jwt_decode를 호출
+          const userId = this.userNum.usernum
+
           axios
           // delete는 데이터를 본문 자체로 보내지 않기에 명시적으로 작성해서 데이터를 보내야 한다.
-          .delete(`http://localhost:3000/comment/${this.id}`,{
-            data: {commentId}
+          .delete(`https://localhost:3000/comment/${this.id}`,{
+            data: {commentId, userId},
+            headers: {'Authorization': `Bearer ${this.isLoggedIn}`}
           })
           .then(response =>{
             console.log(response.data, '삭제 완료')

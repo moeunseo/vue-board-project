@@ -66,7 +66,7 @@ import axios from 'axios';
         // 여기에 서버로 데이터를 보내는 로직 작성
         console.log('회원가입 데이터:', this.formData);
         axios
-        .post(`http://localhost:3000/signup`, this.formData)
+        .post(`https://localhost:3000/signup`, this.formData)
         .then(response =>{
             console.log(response.data, '데이터 전송')
             this.$router.push({name: 'PostLogin'})
