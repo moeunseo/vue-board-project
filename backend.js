@@ -13,16 +13,29 @@ const moment = require('moment')
 // 비밀번호 암호화를 위한 모듈
 const bcrypt = require('bcrypt')
 
+// 웹 소켓 설정
+const WebSocket = require('ws')
+
 // 보안 강화
 const https = require('https')
-const options = {
+const server = https.createServer({
     key: fs.readFileSync('localhost.key'),
     cert: fs.readFileSync('localhost.crt')
-}
-  app.use(cors({
+}, app)
+
+const wss = new WebSocket.Server({server, path:'/ws'})
+
+wss.on('connection', (ws) => {
+    console.log('클라이언트 연결됨');
+    ws.on('message', (message) => {
+      console.log('받은 메시지: ', message);
+    });
+  });
+  
+app.use(cors({
     origin: 'https://localhost:8081',  // 클라이언트의 URL을 정확하게 지정
     // credentials: true,  // 쿠키를 포함한 요청을 허용
-  }));
+}));
 
 // MySQL 연결 설정
 const db = mysql.createConnection({
@@ -57,13 +70,45 @@ async function hashPassword(plainPassword) {
 // 클라이언트로 부터 요청이 들어오면 express는 데이터가 json형식인지 몰라서 직접 설정
 app.use(express.json())
 
+
+// 아이디 중복 확인
+app.post('/userIdCheck', (req, res)=>{
+    const userId = req.body.userId
+    console.log('받아온 userId', userId)
+
+    if(userId === ''){
+        return res.status(400).json({ message: "아이디 빈 값" })
+    }
+
+    db.query('select userId from board_signup where userId = ?',
+        [userId],
+        (err, result) =>{
+            if(err){
+                console.error(err)
+                return res.status(500).send('서버 오류')
+            }
+
+            // 행이 없다면 아이디 생성 완료
+            if(result.length > 0){
+                return res.status(200).json({exits: true}) // 중복아이디가 존재
+            }
+            else{
+                return res.status(200).json({exits: false}) // 아이디 사용 가능
+            }
+        }
+    ) 
+})
+
 // 회원가입
 app.post('/signup', async (req, res)=>{
-    console.log('전달된 사용자 정보:', req.body)
+    // console.log('전달된 사용자 정보:', req.body)
     const {username, userId, password} = req.body
 
-    const hashedPassword = await hashPassword(password)
+    if(username === '' || userId === '' || password ==='' ){
+        return res.status(400).json({ message: "모든 필드를 채워주세요." })
+    }
 
+    const hashedPassword = await hashPassword(password)
     db.query(`
         insert into board_signup (userName, userId, userPwd)
         values (?, ?, ?)`,
@@ -97,6 +142,12 @@ const secretKey = 'vuetest'
 app.post('/login', async (req, res)=>{
     console.log('받아온 아이디 비밀번호', req.body)
     const {userId, password} = req.body
+
+    // 아이디 비밀번호 유효성 검사
+    if(userId === '' || password === ''){
+        return res.status(400).send('아이디와 비밀번호 제대로 입력하세요')
+    }
+
 
     // 비동기 처리 작업을 위해 Promise 사용
     try {
@@ -147,7 +198,11 @@ app.post('/login', async (req, res)=>{
 // 메인 화면(PostList)에 데이터를 가져오기
 app.get('/main', (req, res) => {
     // 작성이 최신순으로 불러오기
-    db.query('SELECT *FROM board order by board_current_time desc', 
+    db.query(`
+        select b.board_id, b.board_title, b.userNum, b.board_update_time, bs.userName 
+        from board b left join board_signup bs on
+        b.userNum = bs.usernum
+        order by b.board_update_time desc`, 
         (err, results)=>{
         if(err){
             return res.status(500).send('서버 오류')
@@ -163,10 +218,12 @@ app.get('/main/:query', (req, res)=>{
     const searchWord = req.params.query
     
     const serarchQuery = `
-        SELECT *FROM board
-        WHERE board_title LIKE CONCAT('%', ?, '%')
-        OR board_content LIKE CONCAT('%', ?, '%')
-        order by board_current_time desc`
+        SELECT b.board_id, b.board_title, b.userNum, b.board_update_time, bs.userName 
+        from board b left join board_signup bs on
+        b.userNum = bs.usernum
+        WHERE b.board_title LIKE CONCAT('%', ?, '%')
+        OR b.board_content LIKE CONCAT('%', ?, '%')
+        order by board_update_time desc`
     db.query(serarchQuery,
         [searchWord, searchWord],
         (err, results)=>{
@@ -216,14 +273,16 @@ const upload = multer({
 const authenticateJWT = (req, res, next) => {
     const token = req.headers['authorization']
 
+    // 로그인을 하지 않은 사람이 게시글을 볼 수 있게
     if (!token) {
-        return next() // 인증 없이 넘어감
+        next()
+        return
     }
 
     jwt.verify(token.split(' ')[1], secretKey, (err, user) => {
     if (err) {
         console.error('오류가 나는 이유', err)
-        return res.status(403).send('토큰이 유효하지 않습니다.');
+        return res.status(401).send('토큰이 유효하지 않습니다.')
     }
     req.user = user  // 검증된 사용자 정보 저장
     next()  // 요청을 처리할 수 있도록 이어짐
@@ -391,7 +450,7 @@ app.get('/detail/:id', authenticateJWT,(req, res) => {
   })
 
 
-const fsPromises = require('fs').promises
+// const fsPromises = require('fs').promises
 
 // 게시글 삭제
 app.delete('/detail/:id', authenticateJWT, (req, res)=>{
@@ -555,9 +614,11 @@ app.delete('/delete/file', (req,res) =>{
 app.get('/comment/:id', (req, res)=>{
     const boardId = req.params.id
     db.query(`
-        select comment_id, comment_content, created_at, updated_at, userNum 
-        from comments where board_id = ?
-        order by created_at desc`,
+        select c.comment_id, c.comment_content, c.created_at, c.updated_at, c.userNum, bs.userName 
+        from comments c join board_signup bs 
+        on c.userNum = bs.usernum
+        where board_id = ?
+        order by c.created_at desc`,
         [boardId],
         (err, results) =>{
             if(err){
@@ -664,14 +725,17 @@ app.put('/comment/:id', authenticateJWT, (req, res)=>{
 // Vue 빌드 파일 정적 제공
 app.use(express.static(path.join(__dirname, 'dist')));
 app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'))
 })
 
 // 서버 시작 http일 때
 // app.listen(port, () => {
-// console.log(`Server is running on http://localhost:${port}`);
+// console.log(`Server is running on http://localhost:${port}`)
 // })
 
-https.createServer(options, app).listen(port, () => {
-    console.log('HTTPS server is running on https://localhost:3000');
-});
+// https.createServer(server, app).listen(port, () => {
+//     console.log('HTTPS server is running on https://localhost:3000')
+// })
+server.listen(port, ()=>{
+    console.log(`HTTPS server is running on https://localhost:${port}`)
+})

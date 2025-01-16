@@ -17,7 +17,9 @@
               <!-- <img src="/path/to/default-avatar.png" alt="Profile" class="profile-img" /> -->
               <div class="comment-details">
                 <!-- 수정 클릭 여부 -->
-                <p v-if="!comment.editMode" class="comment-text">{{comment.comment_content }}
+                <p v-if="!comment.editMode" class="comment-text">
+                  <span class="user-name">{{comment.userName}}</span>
+                  <span class="comment-content">{{comment.comment_content}}</span>
                   <span style="display: none;">{{ comment.userNum }}</span>
                   <span class="comment-time">{{formatTimeAgo(comment.updated_at)}}</span>
                   <span class="comment-time">{{comment.status}}</span>
@@ -337,8 +339,15 @@ textarea{
 }
 
 .comment-text {
-  font-size: 14px;
-  color: #333;
+  display: flex;
+}
+
+.user-name {
+  font-weight: bold; /* 선택사항: 이름 강조 */
+}
+
+.comment-content {
+  margin-top: 5px; /* 이름과 댓글 간격 조정 */
 }
 
 .comment-time {
@@ -351,11 +360,4 @@ textarea{
   font-style: italic;
   color: #888;
 }
-
-/* 에러메시지 여부 */
-.errorMsg {
-  color: red;
-  font-size: 1rem;
-  margin-top: 10px;
-}
-  </style>  
+</style>  

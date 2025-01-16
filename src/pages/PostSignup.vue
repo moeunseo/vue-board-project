@@ -5,38 +5,34 @@
       <form @submit.prevent="handleSubmit">
         <div class="form-group">
             <label for="username">이름</label>
-            <input type="text" id="username" v-model="formData.username" placeholder="이름을 입력하세요"/>
-            <label v-if="errorMsg" class="error">이름을 입력해주세요.</label>
+            <input type="text" id="username" v-model.trim="formData.username" placeholder="이름을 입력하세요"/>
         </div>
 
         <div class="form-group">
             <label for="userId">아이디</label>
-            <input type="text" id="userId" v-model="formData.userId" placeholder="아이디를 입력하세요" />
-            <label v-if="errorMsg" class="error">아이디를 입력해주세요.</label>
+            <input type="text" id="userId" v-model.trim="formData.userId" placeholder="아이디를 입력하세요" />
         </div>
+
+        <!-- 중복확인 버튼 -->
+        <button type="button" @click="checkUserId">중복확인</button>
+        <p v-if="isUserIdExists !== null">
+            {{ isUserIdExists ? '이미 사용 중인 아이디입니다.' : '사용 가능한 아이디입니다.' }}
+        </p>
 
         <div class="form-group">
             <label for="password">비밀번호</label>
-            <input type="password" id="password" v-model="formData.password" placeholder="비밀번호를 입력하세요" />
-            <label v-if="errorMsg" class="error">비밀번호를 입력해주세요.</label>
+            <input type="password" id="password" v-model.trim="formData.password" placeholder="비밀번호를 입력하세요" />
         </div>
 
         <div class="form-group">
-            <label for="confirmPassword">비밀번호 확인</label>
-            <input type="password" id="confirmPassword" v-model="formData.confirmPassword" placeholder="비밀번호를 다시 입력하세요" />
-            <label v-if="checkPwd" class="error">비밀번호가 일치하지 않습니다.</label>
-        </div>
-
-        <div class="form-group">
-            <button type="submit">가입하기</button>
+            <button type="submit" :class="{'disabled-btn': isFormInvalid}" :disabled="isFormInvalid">가입하기</button>
         </div>
       </form>
-
     </div>
   </template>
   
-  <script>
-import axios from 'axios';
+<script>
+import axios from 'axios'
 
   export default {
     data() {
@@ -47,36 +43,62 @@ import axios from 'axios';
           password: '',
           confirmPassword: ''
         },
-        errorMsg: false,
-        checkPwd: false
-      };
+        // 아이디 중복 여부
+        isUserIdExists: null,
+        isUserIdBtn: false
+      }
     },
     computed:{
-        // 이름이 빈칸일 때
-        
+      // 값을 전부 입력하기 전까진 버튼 비활성화
+      isFormInvalid() {
+        return !this.formData.username.trim() || !this.formData.userId.trim() ||!this.formData.password.trim() || !this.formData.confirmPassword.trim()
+      },
     },
     methods: {
-      handleSubmit() {
-        // 비밀번호 확인 로직
-        if (this.formData.password !== this.formData.confirmPassword) {
-          this.checkPwd = true
-          return
+      // 아이디 중복확인
+      checkUserId(){
+        console.log('받아온 UserId:', this.formData.userId)
+        if(!this.formData.userId){
+          alert('값을 입력하세요.')
         }
-  
-        // 여기에 서버로 데이터를 보내는 로직 작성
-        console.log('회원가입 데이터:', this.formData);
+
+        // 버튼 누름
+        this.isUserIdBtn = true
         axios
-        .post(`https://localhost:3000/signup`, this.formData)
+        .post(`https://localhost:3000/userIdCheck`, {userId: this.formData.userId})
         .then(response =>{
-            console.log(response.data, '데이터 전송')
-            this.$router.push({name: 'PostLogin'})
+          this.isUserIdExists = response.data.exits // true인지 false인지 값 가져옴
+          console.log('무슨 값', this.isUserIdExists)
         })
         .catch(error =>{
-            console.error('회원가입 오류', error)
+          console.error('아이디 중복 확인 오류', error)
+          this.isUserIdBtn = false
         })
+      },
+
+      handleSubmit() {
+        if(!this.isUserIdBtn || this.isUserIdExists){
+          alert('아이디 중복 체크하시오')
+        }
+
+        // 여기에 서버로 데이터를 보내는 로직 작성
+        console.log('회원가입 데이터:', this.formData)
+        // 사용가능한 아이디라면, false라면
+        // 중복확인 버튼을 눌렀을 때만 실행
+        if(!this.isUserIdExists && this.isUserIdBtn){
+          axios
+          .post(`https://localhost:3000/signup`, this.formData)
+          .then(response =>{
+              console.log(response.data, '데이터 전송')
+              this.$router.push({name: 'PostLogin'})
+          })
+          .catch(error =>{
+              console.error('회원가입 오류', error)
+          })
+        }
       }
     }
-  };
+  }
   </script>
   
   <style scoped>
@@ -137,6 +159,7 @@ color: white;
 font-size: 16px;
 font-weight: bold;
 cursor: pointer;
+margin-bottom: 10px;
 }
 
 button:hover {

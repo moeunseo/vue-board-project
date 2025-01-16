@@ -18,13 +18,15 @@
         methods:{
             searchBoard(){
                 console.log('검색한 단어', this.searchWord)
-                if(this.searchWord.trim() === 0){
+                if(this.searchWord.trim() === ''){
                     alert('검색어를 입력해주세요')
                     return
                 }
                 // 부모 컴포넌트(리스트 컴포넌트)로 해당 검색어를 에미터로 보냄
                 this.$emit('searchWord', this.searchWord)
-                
+            },
+            clearSearch(){
+              this.searchWord = ''
             }
         }
     }

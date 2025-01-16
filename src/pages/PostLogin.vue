@@ -4,13 +4,13 @@
     <form @submit.prevent="handleLogin">
     <div class="form-group">
         <label for="username">아이디</label>
-        <input type="text" id="username" v-model="formData.userId" placeholder="아이디를 입력하세요"/>
+        <input type="text" id="username" v-model.trim="formData.userId" placeholder="아이디를 입력하세요" />
     </div>
     <div class="form-group">
         <label for="password">비밀번호</label>
-        <input type="password" id="password" v-model="formData.password" placeholder="비밀번호를 입력하세요"/>
+        <input type="password" id="password" v-model.trim="formData.password" placeholder="비밀번호를 입력하세요"/>
     </div>
-    <button type="submit">로그인</button>
+    <button type="submit" :class="{'disabled-btn': isFormInvalid}" :disabled="isFormInvalid">로그인</button>
     </form>
     <!-- <br> -->
     <!-- 나중에 구현할 부분 -->
@@ -24,18 +24,24 @@ import axios from 'axios';
 export default {
 data() {
     return {
-    formData: {
-        userId: '',
-        password: '',
-    },
-    };
+        formData: {
+            userId: '',
+            password: '',
+        },
+        isSubmitClicked: false
+    }
 },
+computed:{
+    // 아이디나 비밀번호가 빈 값이면 버튼을 비활성화
+    isFormInvalid() {
+      return !this.formData.userId.trim() || !this.formData.password.trim()
+    }
+},
+
 methods: {
     handleLogin() {
         // 로그인 처리 로직
         console.log('로그인 시도:', this.formData)
-
-        // 빈 값 입력 시 유효성 검사
 
         axios
         .post(`https://localhost:3000/login`, this.formData)
@@ -50,7 +56,8 @@ methods: {
             // 로그인이 실패 시
             alert('존재하지 않은 사용자입니다.')
             this.formData.userId = ''
-            this.formData.password= ''
+            this.formData.password = ''
+            this.$router.push({name: 'PostLogin'})
             console.error('로그인 오류', error)
         })
     },
@@ -106,5 +113,16 @@ cursor: pointer;
 
 button:hover {
 background-color: #0056b3;
+}
+
+/* 비활성화된 버튼 스타일 */
+button.disabled-btn {
+  background-color: #ccc; /* 회색 */
+  cursor: not-allowed;
+}
+
+/* 버튼에 마우스를 올렸을 때 활성화 */
+button:not(.disabled-btn):hover {
+  background-color: #0056b3;
 }
 </style>  

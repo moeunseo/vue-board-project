@@ -14,19 +14,23 @@
     <router-link v-if="isLoggedIn" :to="{ name: 'PostForm' }" class="write-btn">작성하기</router-link>
     
     <!-- 검색하기 -->
-     <!-- 자식에서 보내온 에미터를 받음 -->
-    <PostSearch @searchWord="search"/>
+    <!-- 자식에서 보내온 에미터를 받음
+         자식 컴포넌트의 메소드를 사용할 땐, ref 선언 -->
+    <PostSearch ref="postSearch" @searchWord="search"/>
 
     <ul class="post-list">
       <li v-for="post in paginatedPosts" :key="post.board_id" class="post-item">
         <router-link :to="{ name: 'PostDetail', params: { id: post.board_id } }" class="post-title">
           {{ post.board_title }}
         </router-link>
+        작성자: {{post.userName}}
       </li>
     </ul>
 
     <!-- 검색 결과가 없을 경우 메시지 출력 -->
-    <p v-if="searchWord && paginatedPosts.length === 0">검색 결과가 없습니다.</p>
+    <p v-if="searchWord && paginatedPosts.length === 0">검색 결과가 없습니다.
+      <router-link :to="{ name: 'Home' }" class="list-btn" @click="resetSearch">목록</router-link>
+    </p>
 
     <!-- 페이지네이션 버튼 -->
     <div class="pagination">
@@ -73,6 +77,11 @@ export default {
     }
   },
   methods: {
+    resetSearch(){
+      this.searchWord = ''
+      this.$refs.postSearch.clearSearch() // 자식 컴포넌트 검색어 초기화
+      this.boardAll()
+    },
     changePage(page) {
       if (page >= 1 && page <= this.totalPages) {
         this.currentPage = page
@@ -246,5 +255,24 @@ transition: background-color 0.3s ease;
 .user-btn:hover {
 background-color: #0056b3;
 border-color: #0056b3;
+}
+
+.list-btn {
+  display: flex;
+  padding: 10px 20px;
+  font-size: 16px;
+  background-color: #007BFF;
+  color: white;
+  border: none;
+  box-sizing: border-box;
+  border-radius: 5px;
+  cursor: pointer;
+  text-align: center;
+  font-weight: bold;
+  text-decoration: none; /* 링크 기본 스타일 제거 */
+}
+
+.list-btn:hover{
+  background-color: #0056b3;
 }
 </style>
