@@ -3,7 +3,8 @@ module.exports = defineConfig({
   transpileDependencies: true,
   devServer: {
     historyApiFallback: true, // history 모드 활성화
-    hot: true,
+    hot: false,
+    liveReload: false,
     server: {
       type: 'https', // 새로운 방식으로 HTTPS 활성화
       options: {

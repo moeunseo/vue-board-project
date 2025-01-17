@@ -96,7 +96,9 @@ export default {
         }
     },
     // 상세보기 페이지로 넘어오면서 게시글에 대한 데이터들을 화면에 렌더링 하기 위함
-    mounted(){
+    created(){
+      this.boardId = this.$route.params.id
+      console.log('게시글 번호', this.boardId)
       if(!this.boardId){
         alert('유효하지 않은 게시글입니다.')
         this.$router.push({name: 'Home'})
@@ -128,64 +130,38 @@ export default {
         }
         return `${Math.round(size)} ${units[i]}`;
       },
+
+    formatDate(dateString) {
+      const date = new Date(dateString);
+      return `${date.getFullYear()}/${
+        (date.getMonth() + 1).toString().padStart(2, '0')}/${
+        date.getDate().toString().padStart(2, '0')} ${
+        date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+    },
     // 게시글 db에서 가져오기
-    boardDetail(boardId){
-      const token = localStorage.getItem('token')
-      // 토큰 여부
-      const tokenValue = {headers:{}}
+    async boardDetail(boardId){
+      const token = localStorage.getItem('token');
+      const tokenValue = token ? { headers: { 'Authorization': `Bearer ${token}` } } : {};
 
-      if(token){
-        tokenValue.headers['Authorization'] = `Bearer ${token}`
-      }
-
-      console.log('받아온 토큰', tokenValue)
-
-      axios
-      .get(`https://localhost:3000/detail/${boardId}`, tokenValue)
-      .then(response =>{
-        console.log('진짜 빡치네',response.data)
+      try {
+        const response = await axios.get(`https://localhost:3000/detail/${boardId}`, tokenValue);
         const post = response.data;
-        this.form.userNum = post.userNum
-        this.form.title = post.title // 받아온 데이터로 title 설정
-        this.form.content = post.content // 받아온 데이터로 content 설정
-
-        // 현재 로그인된 토큰을 디코딩하여 백엔드에서 받아온 userNum과 같은지 비교
-        if(token){
-          try {
-            const decoded = jwt_decode(token);  // jwt_decode를 호출
-            const userId = decoded.usernum;
-            console.log('로그인한 사용자 num:', userId);
-            if (userId === this.form.userNum) {
-              this.isAuthor = true;
-            }
-          } catch (error) {
-            console.error('토큰 디코딩 오류:', error);
+        this.form.userNum = post.userNum;
+        this.form.title = post.title;
+        this.form.content = post.content;
+        this.updateTime = this.formatDate(post.updatedAt);
+        this.form.files = post.files || [];
+        
+        // 토큰이 있을 때만 사용자 ID와 비교해서 작성자 여부 판단
+        if (token) {
+          const decoded = jwt_decode(token);
+          const userId = decoded.usernum;
+          this.isAuthor = (userId === this.form.userNum);
         }
+      } catch (error) {
+        console.error('게시글을 가져오면서 오류 발생', error);
       }
-
-        // 받은 날짜를 원하는 형식으로 변환
-        // yyyy/mm/dd/h:m
-        const updatedTime = new Date(post.updatedAt)
-        this.updateTime = `${updatedTime.getFullYear()}/
-        ${(updatedTime.getMonth() + 1).toString().padStart(2, '0')}/
-        ${updatedTime.getDate().toString().padStart(2, '0')} 
-        ${updatedTime.getHours().toString().padStart(2, '0')}:${updatedTime.getMinutes().toString().padStart(2, '0')}
-        ${(response.data.status)}`
-
-        // 첨부파일 뿌려주기
-        console.log(post.files.length)
-        if(post.files && post.files.length > 0){
-          this.form.files = post.files
-          console.log('받아온 파일', this.files)
-        }
-        else{
-          this.form.files = []
-        }
-      })
-      .catch (error =>{
-          console.error('게시글을 가져오면서 오류 발생', error)
-        })
-      },
+    },
 
     // 게시글 삭제
     deleteBoard(boardId){

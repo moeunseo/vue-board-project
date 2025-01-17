@@ -13,9 +13,6 @@ const moment = require('moment')
 // 비밀번호 암호화를 위한 모듈
 const bcrypt = require('bcrypt')
 
-// 웹 소켓 설정
-const WebSocket = require('ws')
-
 // 보안 강화
 const https = require('https')
 const server = https.createServer({
@@ -23,15 +20,6 @@ const server = https.createServer({
     cert: fs.readFileSync('localhost.crt')
 }, app)
 
-const wss = new WebSocket.Server({server, path:'/ws'})
-
-wss.on('connection', (ws) => {
-    console.log('클라이언트 연결됨');
-    ws.on('message', (message) => {
-      console.log('받은 메시지: ', message);
-    });
-  });
-  
 app.use(cors({
     origin: 'https://localhost:8081',  // 클라이언트의 URL을 정확하게 지정
     // credentials: true,  // 쿠키를 포함한 요청을 허용
@@ -69,7 +57,6 @@ async function hashPassword(plainPassword) {
 
 // 클라이언트로 부터 요청이 들어오면 express는 데이터가 json형식인지 몰라서 직접 설정
 app.use(express.json())
-
 
 // 아이디 중복 확인
 app.post('/userIdCheck', (req, res)=>{
@@ -138,6 +125,31 @@ async function comparePassword(plainPassword, hashedPassword) {
 // 토근 사용
 const jwt = require('jsonwebtoken')
 const secretKey = 'vuetest'
+
+// 토큰 유효성 체크
+const authenticateJWT = (req, res, next) => {
+    const token = req.headers['authorization']
+
+    // 로그인을 하지 않은 사람이 게시글을 볼 수 있게
+    if (!token) {
+        next()
+        return
+    }
+
+    jwt.verify(token.split(' ')[1], secretKey, (err, user) => {
+    if (err) {
+        console.error('오류가 나는 이유', err)
+        return res.status(401).send('토큰이 유효하지 않습니다.')
+    }
+    req.user = user  // 검증된 사용자 정보 저장
+    next()  // 요청을 처리할 수 있도록 이어짐
+    })
+}
+
+// 토큰 만료 시 구현
+app.get('/auth/check-token', authenticateJWT, (req, res) =>{
+    res.status(200).json({message: '토큰이 유효합니다.'})
+})
 
 app.post('/login', async (req, res)=>{
     console.log('받아온 아이디 비밀번호', req.body)
@@ -268,28 +280,6 @@ const upload = multer({
     }
 })
 
-
-// 토큰 유효성 체크
-const authenticateJWT = (req, res, next) => {
-    const token = req.headers['authorization']
-
-    // 로그인을 하지 않은 사람이 게시글을 볼 수 있게
-    if (!token) {
-        next()
-        return
-    }
-
-    jwt.verify(token.split(' ')[1], secretKey, (err, user) => {
-    if (err) {
-        console.error('오류가 나는 이유', err)
-        return res.status(401).send('토큰이 유효하지 않습니다.')
-    }
-    req.user = user  // 검증된 사용자 정보 저장
-    next()  // 요청을 처리할 수 있도록 이어짐
-    })
-}
-
-
 // 게시글 작성
 app.post('/write', authenticateJWT, upload.array('files'), (req, res) => {
     console.log('받아온 제목과 내용', req.body)
@@ -354,32 +344,62 @@ app.post('/write', authenticateJWT, upload.array('files'), (req, res) => {
 });
 
 // 게시글 상세보기 페이지 이동
-app.get('/detail/:id', authenticateJWT,(req, res) => {
+app.get('/detail/:id', (req, res) => {
     const postId = req.params.id
-    console.log('~~~~~~~~~~~~', req.user)
-    if (!req.user) {
-        db.query(`
-        select b.userNum, b.board_title, b.board_content, b.board_update_time, b.board_current_time, f.file_id, f.file_name, f.file_url, f.file_size 
-        from board b left join board_file f
-        on b.board_id = f.board_id
-        where b.board_id = ?`, 
-        [postId], 
-        (err, results) => {
+
+    // 토큰이 존재하는 경우만 authenticateJWT 미들웨어 실행
+    if (req.headers['authorization']) {
+        authenticateJWT(req, res, () => {
+            console.log('~~~~~~~~~~~~', req.user) // 유저 정보 확인
+            fetchPostDetails(postId, res) // 게시글 상세 데이터 반환
+        })
+    } else {
+        // 토큰이 없는 경우에도 게시글 상세 정보를 반환
+        fetchPostDetails(postId, res)
+    }
+})
+
+// 게시글 상세보기 페이지 이동
+app.get('/detail/:id', (req, res) => {
+    const postId = req.params.id
+
+    // 토큰이 존재하는 경우만 authenticateJWT 미들웨어 실행
+    if (req.headers['authorization']) {
+        authenticateJWT(req, res, () => {
+            console.log('~~~~~~~~~~~~', req.user) // 유저 정보 확인
+            fetchPostDetails(postId, res) // 게시글 상세 데이터 반환
+        })
+    } else {
+        // 토큰이 없는 경우에도 게시글 상세 정보를 반환
+        fetchPostDetails(postId, res)
+    }
+})
+
+// 게시글 상세 데이터 반환 함수
+function fetchPostDetails(postId, res) {
+    db.query(`
+      select b.userNum, b.board_title, b.board_content, b.board_update_time, b.board_current_time, 
+             f.file_id, f.file_name, f.file_url, f.file_size 
+      from board b 
+      left join board_file f on b.board_id = f.board_id
+      where b.board_id = ?`, 
+      [postId], 
+      (err, results) => {
         if (err) {
             return res.status(500).send('서버 오류')
         }
-    
+
         if (results.length === 0) {
             return res.status(404).send('게시글을 찾을 수 없습니다.')
         }
-    
-        const post = results[0];
-        const updatedTime = new Date(post.board_update_time);
-        const createdTime = new Date(post.board_current_time);
-    
+
+        const post = results[0]
+        const updatedTime = new Date(post.board_update_time)
+        const createdTime = new Date(post.board_current_time)
+
         const timeDifference = updatedTime.getTime() - createdTime.getTime()
         const status = timeDifference !== 0 ? '(수정됨)' : ''
-    
+
         const response = {
             userNum: post.userNum,
             title: post.board_title,
@@ -388,7 +408,7 @@ app.get('/detail/:id', authenticateJWT,(req, res) => {
             status: status,
             files: []
         }
-    
+
         results.forEach(result => {
             if (result.file_name) {
                 response.files.push({
@@ -399,58 +419,10 @@ app.get('/detail/:id', authenticateJWT,(req, res) => {
                 })
             }
         })
-        res.json(response)
-        })
-    }
-    else {
-        db.query(`
-          select b.userNum, b.board_title, b.board_content, b.board_update_time, b.board_current_time, f.file_id, f.file_name, f.file_url, f.file_size 
-          from board b left join board_file f
-          on b.board_id = f.board_id
-          where b.board_id = ?`, 
-          [postId], 
-          (err, results) => {
-            if (err) {
-              return res.status(500).send('서버 오류')
-            }
-      
-            if (results.length === 0) {
-              return res.status(404).send('게시글을 찾을 수 없습니다.')
-            }
-      
-            const post = results[0];
-            const updatedTime = new Date(post.board_update_time)
-            const createdTime = new Date(post.board_current_time)
-      
-            const timeDifference = updatedTime.getTime() - createdTime.getTime()
-            const status = timeDifference !== 0 ? '(수정됨)' : ''
-      
-            const response = {
-              userNum: post.userNum,
-              title: post.board_title,
-              content: post.board_content,
-              updatedAt: post.board_update_time,
-              status: status,
-              files: []
-            }
-      
-            results.forEach(result => {
-              if (result.file_name) {
-                response.files.push({
-                  fileId: result.file_id,
-                  fileName: result.file_name,
-                  fileUrl: result.file_url,
-                  fileSize: result.file_size
-                })
-              }
-            })
-            res.json(response);
-          })
-      } 
-  })
 
-
-// const fsPromises = require('fs').promises
+        res.json(response)  // 게시글 정보 응답
+    })
+}
 
 // 게시글 삭제
 app.delete('/detail/:id', authenticateJWT, (req, res)=>{
@@ -723,6 +695,7 @@ app.put('/comment/:id', authenticateJWT, (req, res)=>{
 })
 
 // Vue 빌드 파일 정적 제공
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')))
 app.use(express.static(path.join(__dirname, 'dist')));
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'))
