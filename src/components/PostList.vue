@@ -10,7 +10,7 @@
 
     <h1>게시글 목록</h1>
     <!-- 작성하기 버튼을 누르면 작성 폼으로 이동하는 라우터 등록 -->
-     <!-- 로그인한 상태에만 보이게 -->
+    <!-- 로그인한 상태에만 보이게 -->
     <router-link v-if="isLoggedIn" :to="{ name: 'PostForm' }" class="write-btn">작성하기</router-link>
     
     <!-- 검색하기 -->
@@ -28,9 +28,11 @@
     </ul>
 
     <!-- 검색 결과가 없을 경우 메시지 출력 -->
-    <p v-if="searchWord && paginatedPosts.length === 0">검색 결과가 없습니다.
-      <router-link :to="{ name: 'Home' }" class="list-btn" @click="resetSearch">목록</router-link>
-    </p>
+     <div class="search-list">
+      <p v-if="searchWord && paginatedPosts.length === 0">검색 결과가 없습니다. <br>
+        <router-link :to="{ name: 'Home' }" class="list-btn" @click="resetSearch">목록</router-link>
+      </p>
+     </div>
 
     <!-- 페이지네이션 버튼 -->
     <div class="pagination">
@@ -42,17 +44,21 @@
         다음
       </button>
     </div>
+
+    <!-- 모달창 추가 -->
+    <ErrorModal :isVisible="isModalVisible" :message="modalMessage" @close="isModalVisible = false" />
   </div>
 </template>
 
 <script>
 import axios from 'axios'
-import PostSearch from './PostSearch.vue';
-
+import PostSearch from './PostSearch.vue'
+import ErrorModal from './ErrorModal.vue';
 export default {
   name: 'PostList',
   components:{
-    PostSearch
+    PostSearch,
+    ErrorModal
   },
   mounted() {
     this.boardAll()
@@ -63,7 +69,10 @@ export default {
       itemsPerPage: 10, // 한 페이지에 표시할 데이터 개수
       currentPage: 1,  // 현재 페이지 번호
       searchWord: '',
-      isLoggedIn: localStorage.getItem('token') // 로그인 여부
+      isLoggedIn: localStorage.getItem('token'), // 로그인 여부
+      // 모달 상태 관리
+      isModalVisible: false,
+      modalMessage: ''
     }
   },
   computed: {
@@ -87,6 +96,11 @@ export default {
         this.currentPage = page
       }
     },
+    // 모달로 에러 메시지 표시
+    showModal(message) {
+      this.modalMessage = message
+      this.isModalVisible = true
+    },
     search(word){
       console.log(word)
       this.searchWord = word
@@ -104,7 +118,7 @@ export default {
           this.posts = response.data
         })
         .catch(error => {
-          console.error('데이터 가져오기 오류', error)
+          this.showModal(error.response.data.message)
         })
     },
     //로그아웃
@@ -257,19 +271,26 @@ background-color: #0056b3;
 border-color: #0056b3;
 }
 
+.search-list{
+  text-align: center;
+  margin-top: 20px;
+}
+
+.search-list p {
+  margin-bottom: 10px;
+}
+
 .list-btn {
-  display: flex;
+  display: inline-block; /* 버튼을 블록 요소로 변경하여 세로로 쌓이게 함 */
+  margin-top: 10px;
   padding: 10px 20px;
-  font-size: 16px;
   background-color: #007BFF;
   color: white;
-  border: none;
-  box-sizing: border-box;
+  text-decoration: none;
   border-radius: 5px;
-  cursor: pointer;
+  font-size: 16px;
+  min-width: 120px;
   text-align: center;
-  font-weight: bold;
-  text-decoration: none; /* 링크 기본 스타일 제거 */
 }
 
 .list-btn:hover{

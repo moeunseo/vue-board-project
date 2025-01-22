@@ -1,67 +1,79 @@
 <template>
-<div class="login-container">
-    <h1>로그인</h1>
-    <form @submit.prevent="handleLogin">
-    <div class="form-group">
-        <label for="username">아이디</label>
-        <input type="text" id="username" v-model.trim="formData.userId" placeholder="아이디를 입력하세요" />
+    <div class="login-container">
+        <h1>로그인</h1>
+        <form @submit.prevent="handleLogin">
+        <div class="form-group">
+            <label for="username">아이디</label>
+            <input type="text" id="username" v-model.trim="formData.userId" placeholder="아이디를 입력하세요" />
+        </div>
+        <div class="form-group">
+            <label for="password">비밀번호</label>
+            <input type="password" id="password" v-model.trim="formData.password" placeholder="비밀번호를 입력하세요"/>
+        </div>
+        <button type="submit" :class="{'disabled-btn': isFormInvalid}" :disabled="isFormInvalid">로그인</button>
+        </form>
+        <!-- <br> -->
+        <!-- 나중에 구현할 부분 -->
+        <!-- <button type="button">카카오 로그인</button> -->
+
+        <!-- 로그인할 때 오류 메시지 띄울 모달창-->
+        <ErrorModal :isVisible="isModalVisible" :message="modalMessage" @close="isModalVisible = false" />
     </div>
-    <div class="form-group">
-        <label for="password">비밀번호</label>
-        <input type="password" id="password" v-model.trim="formData.password" placeholder="비밀번호를 입력하세요"/>
-    </div>
-    <button type="submit" :class="{'disabled-btn': isFormInvalid}" :disabled="isFormInvalid">로그인</button>
-    </form>
-    <!-- <br> -->
-    <!-- 나중에 구현할 부분 -->
-    <!-- <button type="button">카카오 로그인</button> -->
-</div>
 </template>
 
 <script>
-import axios from 'axios';
-
+import axios from 'axios'
+import ErrorModal from '@/components/ErrorModal.vue'
 export default {
-data() {
-    return {
-        formData: {
-            userId: '',
-            password: '',
-        },
-        isSubmitClicked: false
-    }
-},
-computed:{
-    // 아이디나 비밀번호가 빈 값이면 버튼을 비활성화
-    isFormInvalid() {
-      return !this.formData.userId.trim() || !this.formData.password.trim()
-    }
-},
-
-methods: {
-    handleLogin() {
-        // 로그인 처리 로직
-        console.log('로그인 시도:', this.formData)
-
-        axios
-        .post(`https://localhost:3000/login`, this.formData)
-        .then(response =>{
-            // 로그인 성공 시
-            console.log(response.data)
-            // 서버에서 받은 JWT 토큰을 로컬 스토리지에 저장
-            localStorage.setItem('token', response.data.token)
-            this.$router.push({name: 'Home'})
-        })
-        .catch(error =>{
-            // 로그인이 실패 시
-            alert('존재하지 않은 사용자입니다.')
-            this.formData.userId = ''
-            this.formData.password = ''
-            this.$router.push({name: 'PostLogin'})
-            console.error('로그인 오류', error)
-        })
+    components:{
+        ErrorModal
     },
-},
+    data() {
+        return {
+            formData: {
+                userId: '',
+                password: '',
+            },
+            isSubmitClicked: false,
+            // 모달 상태 관리
+            isModalVisible: false,
+            modalMessage: ''
+        }
+    },
+    computed:{
+        // 아이디나 비밀번호가 빈 값이면 버튼을 비활성화
+        isFormInvalid() {
+        return !this.formData.userId.trim() || !this.formData.password.trim()
+        }
+    },
+
+    methods: {
+        // 모달로 에러 메시지 표시
+        showModal(message) {
+            this.modalMessage = message
+            this.isModalVisible = true
+        },
+        handleLogin() {
+            axios
+            .post(`https://localhost:3000/login`, this.formData)
+            .then(response =>{
+                // 로그인 성공 시
+                console.log(response.data)
+                // 서버에서 받은 JWT 토큰을 로컬 스토리지에 저장
+                localStorage.setItem('token', response.data.token)
+                this.$router.push({name: 'Home'})
+            })
+            .catch(error =>{
+                // 로그인이 실패 시
+                const errorMessage = error.response.data.message;  // 에러 메시지
+                const statusCode = error.response.data.statusCode;  // 백엔드에서 보낸 상태 코드
+                this.showModal(`${errorMessage} (상태코드: ${statusCode})`)
+                this.formData.userId = ''
+                this.formData.password = ''
+                this.$router.push({name: 'PostLogin'})
+            })
+        },
+    },
 }
 </script>
 

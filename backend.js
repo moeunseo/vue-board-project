@@ -3,12 +3,12 @@ const mysql = require('mysql')
 const app = express()
 const port = 3000
 const path = require('path')
+
 // 이미지 업로드할 때 많이 사용
 const multer = require('multer')
 // 파일 시스템에 사용되는 모듈
 const fs = require('fs')
 const cors = require('cors'); // CORS 패키지 추가
-app.use(cors()); // 모든 요청을 허용 (개발 단계에서만 사용)
 const moment = require('moment')
 // 비밀번호 암호화를 위한 모듈
 const bcrypt = require('bcrypt')
@@ -64,23 +64,23 @@ app.post('/userIdCheck', (req, res)=>{
     console.log('받아온 userId', userId)
 
     if(userId === ''){
-        return res.status(400).json({ message: "아이디 빈 값" })
+        return res.status(400).json({ message: "빈 값 아이디 받아옴" })
     }
 
     db.query('select userId from board_signup where userId = ?',
         [userId],
         (err, result) =>{
             if(err){
-                console.error(err)
-                return res.status(500).send('서버 오류')
+                console.error('아이디 중복확인 오류 ',err)
+                return res.status(500).json({message: '서버 오류 다시 시도해주세요'})
             }
 
             // 행이 없다면 아이디 생성 완료
             if(result.length > 0){
-                return res.status(200).json({exits: true}) // 중복아이디가 존재
+                return res.status(200).json({exists: true}) // 중복아이디가 존재
             }
             else{
-                return res.status(200).json({exits: false}) // 아이디 사용 가능
+                return res.status(200).json({exists: false}) // 아이디 사용 가능
             }
         }
     ) 
@@ -88,29 +88,34 @@ app.post('/userIdCheck', (req, res)=>{
 
 // 회원가입
 app.post('/signup', async (req, res)=>{
-    // console.log('전달된 사용자 정보:', req.body)
     const {username, userId, password} = req.body
 
     if(username === '' || userId === '' || password ==='' ){
         return res.status(400).json({ message: "모든 필드를 채워주세요." })
     }
 
-    const hashedPassword = await hashPassword(password)
-    db.query(`
-        insert into board_signup (userName, userId, userPwd)
-        values (?, ?, ?)`,
-        [username, userId, hashedPassword],
-        (err) =>{
-            if(err){
-                console.error(err)
-                return res.status(500).send('서버 오류')
+    try{
+        const hashedPassword = await hashPassword(password)
+        db.query(`
+            insert into board_signup (userName, userId, userPwd)
+            values (?, ?, ?)`,
+            [username, userId, hashedPassword],
+            (err) =>{
+                if(err){
+                    console.error('회원가입 DB쿼리 실행 오류: ',err)
+                    return res.status(500).json({message: '서버 오류, 다시 시도해주세요.'})
+                }
+                res.status(200).json({message: '회원가입 완료되었습니다.'})
             }
-            res.status(200).send('회원가입 성공!')
-        }
-    )
+        )   
+    }
+    catch(error){
+        console.error('비밀번호 암호화 오류', error)
+        return res.status(500).json({message: '비밀번호 암호화 오류'})
+    }
 })
 
-// // 입력된 비밀번호와 저장된 해시된 비밀번호를 비교하는 함수
+// 입력된 비밀번호와 저장된 해시된 비밀번호를 비교하는 함수
 async function comparePassword(plainPassword, hashedPassword) {
     try {
         const isMatch = await bcrypt.compare(plainPassword, hashedPassword)
@@ -122,10 +127,9 @@ async function comparePassword(plainPassword, hashedPassword) {
 }
 
 // 로그인
-// 토근 사용
+// 토큰 사용
 const jwt = require('jsonwebtoken')
 const secretKey = 'vuetest'
-
 // 토큰 유효성 체크
 const authenticateJWT = (req, res, next) => {
     const token = req.headers['authorization']
@@ -139,7 +143,7 @@ const authenticateJWT = (req, res, next) => {
     jwt.verify(token.split(' ')[1], secretKey, (err, user) => {
     if (err) {
         console.error('오류가 나는 이유', err)
-        return res.status(401).send('토큰이 유효하지 않습니다.')
+        return res.status(401).json({message: '토큰이 유효하지 않습니다.'})
     }
     req.user = user  // 검증된 사용자 정보 저장
     next()  // 요청을 처리할 수 있도록 이어짐
@@ -151,15 +155,15 @@ app.get('/auth/check-token', authenticateJWT, (req, res) =>{
     res.status(200).json({message: '토큰이 유효합니다.'})
 })
 
+// 로그인 구현
 app.post('/login', async (req, res)=>{
     console.log('받아온 아이디 비밀번호', req.body)
     const {userId, password} = req.body
 
     // 아이디 비밀번호 유효성 검사
     if(userId === '' || password === ''){
-        return res.status(400).send('아이디와 비밀번호 제대로 입력하세요')
+        return res.status(400).json({ message: "모든 필드를 채워주세요." })
     }
-
 
     // 비동기 처리 작업을 위해 Promise 사용
     try {
@@ -173,7 +177,7 @@ app.post('/login', async (req, res)=>{
             (err, result) => {
               if (err) {
                 console.error('사용자 찾기 오류:', err);
-                reject('서버 오류');
+                reject('사용자를 조회하는 도중 오류가 발생했습니다.');
               } else {
                 resolve(result);
               }
@@ -181,13 +185,23 @@ app.post('/login', async (req, res)=>{
         })
     
         if (result.length === 0) {
-          return res.status(404).send('사용자를 찾을 수 없습니다.');
+          return res.status(404)
+          .json({
+            message: '사용자를 찾을 수 없습니다. 입력한 아이디 혹은 비밀번호를 확인해주세요.',
+            statusCode: 404,
+            error: 'UserNotFound'
+          })
         }
     
         // 비밀번호 비교
-        const isMatch = await comparePassword(password, result[0].userPwd);
+        const isMatch = await comparePassword(password, result[0].userPwd)
         if (!isMatch) {
-          return res.status(400).send('비밀번호가 일치하지 않습니다.');
+          return res.status(400)
+          .json({
+            message: '비밀번호가 일치하지 않습니다.',
+            statusCode: 400,
+            error: 'InvalidPassword'
+        })
         }
     
         // JWT 토큰 발급
@@ -202,7 +216,11 @@ app.post('/login', async (req, res)=>{
     } 
     catch (error) {
         console.error('로그인 처리 오류:', error);
-        res.status(500).send('서버 오류');
+        res.status(500)
+        .json({
+            message: '로그인 처리 중 오류가 발생했습니다.',
+            statusCode: 500
+        })
     }
 })
 
@@ -217,33 +235,34 @@ app.get('/main', (req, res) => {
         order by b.board_update_time desc`, 
         (err, results)=>{
         if(err){
-            return res.status(500).send('서버 오류')
+            console.error('데이터를 가져오는 도중 오류 발생', err)
+            return res.status(500).json({message:'데이터를 불러오는 도중 에러 발생생.'})
         }
-        res.json(results) // json형태로 보내기 때문에 express.json 필요X
+        res.status(200).json(results) // json형태로 보내기 때문에 express.json 필요X
     })
 })
 
 // 검색된 결과 select
 app.get('/main/:query', (req, res)=>{
-    // 검색된 단어를 받아옴
-    console.log('잘되니?', req.params.query)
     const searchWord = req.params.query
     
-    const serarchQuery = `
+    const searchQuery = `
         SELECT b.board_id, b.board_title, b.userNum, b.board_update_time, bs.userName 
         from board b left join board_signup bs on
         b.userNum = bs.usernum
         WHERE b.board_title LIKE CONCAT('%', ?, '%')
         OR b.board_content LIKE CONCAT('%', ?, '%')
         order by board_update_time desc`
-    db.query(serarchQuery,
+    db.query(searchQuery,
         [searchWord, searchWord],
         (err, results)=>{
             if(err){
-                return res.status(500).send(err)
+                console.error('검색한 결과 오류 발생', err)
+                return res.status(500)
+                .json({message: '검색한 결과 가져오는 도중 오류 발생'})
             }
             else{
-                res.json(results)
+                res.status(200).json(results)
             }
         }
     )

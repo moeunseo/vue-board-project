@@ -4,30 +4,44 @@
             <input type="text" v-model.trim="searchWord" placeholder="검색어를 입력하세요">
             <button type="submit">검색</button>
         </form>
+
+        <!-- 모달창 추가 -->
+        <ErrorModal :isVisible="isModalVisible" :message="modalMessage" @close="isModalVisible = false" />
     </div>
 </template>
 
 <script>
+import ErrorModal from './ErrorModal.vue';
     export default {
         name: 'PostSearch',
+        components:{
+          ErrorModal
+        },
         data(){
             return {
-                searchWord: ""
+                searchWord: "",
+                 // 모달 상태 관리
+                isModalVisible: false,
+                modalMessage: ''
             }
         },
         methods:{
-            searchBoard(){
-                console.log('검색한 단어', this.searchWord)
-                if(this.searchWord.trim() === ''){
-                    alert('검색어를 입력해주세요')
-                    return
-                }
-                // 부모 컴포넌트(리스트 컴포넌트)로 해당 검색어를 에미터로 보냄
-                this.$emit('searchWord', this.searchWord)
-            },
-            clearSearch(){
-              this.searchWord = ''
+          // 모달로 에러 메시지 표시
+          showModal(message) {
+            this.modalMessage = message
+            this.isModalVisible = true
+          },
+          searchBoard(){
+            if(this.searchWord.trim() === ''){
+                this.showModal('검색어를 입력해주세요')
+                return
             }
+            // 부모 컴포넌트(리스트 컴포넌트)로 해당 검색어를 에미터로 보냄
+            this.$emit('searchWord', this.searchWord)
+          },
+          clearSearch(){
+            this.searchWord = ''
+          }
         }
     }
 </script>

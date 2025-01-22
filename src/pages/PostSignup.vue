@@ -28,57 +28,73 @@
             <button type="submit" :class="{'disabled-btn': isFormInvalid}" :disabled="isFormInvalid">가입하기</button>
         </div>
       </form>
+
+      <!-- 에러메세지를 보여줄 모달창 -->
+      <ErrorModal :isVisible="isModalVisible" :message="modalMessage" @close="isModalVisible = false" />
     </div>
   </template>
   
 <script>
 import axios from 'axios'
-
+import ErrorModal from '@/components/ErrorModal.vue'
   export default {
+    components:{
+      ErrorModal
+    },
     data() {
       return {
         formData: {
           username: '',
           userId: '',
-          password: '',
-          confirmPassword: ''
+          password: ''
         },
         // 아이디 중복 여부
         isUserIdExists: null,
-        isUserIdBtn: false
+        isUserIdBtn: false,
+        // 모달 상태 관리
+        isModalVisible: false,
+        modalMessage: ''
       }
     },
     computed:{
       // 값을 전부 입력하기 전까진 버튼 비활성화
       isFormInvalid() {
-        return !this.formData.username.trim() || !this.formData.userId.trim() ||!this.formData.password.trim() || !this.formData.confirmPassword.trim()
-      },
+        return !this.formData.username.trim() || !this.formData.userId.trim() ||!this.formData.password.trim()
+      }
     },
     methods: {
+       // 모달로 에러 메시지 표시
+      showModal(message) {
+        this.modalMessage = message
+        this.isModalVisible = true
+      },
       // 아이디 중복확인
       checkUserId(){
-        console.log('받아온 UserId:', this.formData.userId)
-        if(!this.formData.userId){
-          alert('값을 입력하세요.')
+        const userId = this.formData.userId.trim()
+        // 입력하지 않았다면
+        if(!userId){
+          this.showModal('아이디를 입력하세요.')
+          return
         }
-
         // 버튼 누름
+        // 아이디 중복확인을 위한 메소드 호출
         this.isUserIdBtn = true
         axios
-        .post(`https://localhost:3000/userIdCheck`, {userId: this.formData.userId})
+        .post(`https://localhost:3000/userIdCheck`, {userId: userId})
         .then(response =>{
-          this.isUserIdExists = response.data.exits // true인지 false인지 값 가져옴
-          console.log('무슨 값', this.isUserIdExists)
+          this.isUserIdExists = response.data.exists // false값이면 아이디 생성 성공
+          console.log('중복 유무', this.isUserIdExists)
         })
         .catch(error =>{
-          console.error('아이디 중복 확인 오류', error)
+          console.error('아이디 중복 확인 오류', error.response.data.message)
           this.isUserIdBtn = false
         })
       },
 
       handleSubmit() {
         if(!this.isUserIdBtn || this.isUserIdExists){
-          alert('아이디 중복 체크하시오')
+          this.showModal('아이디 중복 체크하세요.')
+          return
         }
 
         // 여기에 서버로 데이터를 보내는 로직 작성
@@ -90,10 +106,14 @@ import axios from 'axios'
           .post(`https://localhost:3000/signup`, this.formData)
           .then(response =>{
               console.log(response.data, '데이터 전송')
-              this.$router.push({name: 'PostLogin'})
+              this.showModal(response.data.message)
+              setTimeout(()=>{
+                this.$router.push({name: 'PostLogin'})
+              }, 1000)
           })
           .catch(error =>{
-              console.error('회원가입 오류', error)
+              console.error('회원가입 오류', error.response.data.message)
+              this.showModal('회원가입 실패' + error.response.data.message)
           })
         }
       }
