@@ -142,7 +142,7 @@ const authenticateJWT = (req, res, next) => {
 
     jwt.verify(token.split(' ')[1], secretKey, (err, user) => {
     if (err) {
-        console.error('오류가 나는 이유', err)
+        console.error('토큰 유효기간 확인 필요', err)
         return res.status(401).json({message: '토큰이 유효하지 않습니다.'})
     }
     req.user = user  // 검증된 사용자 정보 저장
@@ -613,9 +613,12 @@ app.get('/comment/:id', (req, res)=>{
         [boardId],
         (err, results) =>{
             if(err){
-                return res.status(500).send('서버 오류')
+                console.error('댓글 목록 오류', err)
+                return res.status(500).json({
+                    message: '댓글 목록을 불러오는 도중 오류 발생',
+                    statusCode: 500
+                })
             }
-            console.log('===========',results)
 
             const commentStatus = results.map(comment =>{
                 const created_at = new Date(comment.created_at)
@@ -627,8 +630,7 @@ app.get('/comment/:id', (req, res)=>{
                 return {...comment, status}
             })
         
-            console.log(commentStatus)
-            res.json(commentStatus)
+            res.status(200).json(commentStatus)
         }
     )
 })
@@ -637,21 +639,24 @@ app.get('/comment/:id', (req, res)=>{
 app.post('/comment/:id', authenticateJWT,(req,res)=>{
     const {newComment, boardId} = req.body
 
-    console.log('받아온 값', newComment, boardId)
-    console.log('토큰 값', req.user)
-
     if(!newComment){
-        return res.status(400).send('제목과 내용은 필수입니다.')
+        return res.status(400).json({
+            message: '댓글 입력은 필수입니다.',
+            statusCode: 400
+        })
     }
 
     db.query('insert into comments (comment_content, board_id, userNum) values (?, ?, ?)',
         [newComment, boardId, req.user.usernum],
         (err) =>{
             if(err){
-                console.error('무슨오류야?', err)
-                return res.status(500).send('서버 오류')
+                console.error('댓글 작성 시 오류 발생', err)
+                return res.status(500).json({
+                    message: '댓글 작성하면서 오류 발생',
+                    statusCode: 500
+                })
             }
-            res.status(200).send('게시글 작성 완료');
+            res.status(200).json({message: '게시글 댓글 작성 완료'})
         }
     )
 })
@@ -660,24 +665,27 @@ app.delete('/comment/:id', authenticateJWT, (req, res)=>{
     const boardId = req.params.id
     const {commentId, userId} = req.body
 
-    console.log('어떤 값들인지', req.body)
-    console.log('=========', boardId, commentId)
-    console.log('잘 받아와??', req.user)
-
     if(req.user.usernum !== userId){
-        return res.status(403).send('댓글 삭제 권한이 없습니다.')
+        return res.status(403).json({
+            message: '댓글 삭제 권한이 없습니다.'
+        })
     }
 
     db.query('delete from comments where comment_id=? and board_id=?',
         [commentId, boardId],
         (err, results)=>{
             if(err){
-                console.error('댓글 삭제 오류!', err)
-                return res.status(500).send('서버 오류')
+                console.error('댓글 삭제 오류', err)
+                return res.status(500).json({
+                    message: '댓글 삭제 중 오류 발생',
+                    statusCode: 500
+                })
             }
 
             if(results.affectedRows === 0){
-                return res.status(404).send('댓글을 찾을 수 없습니다.')
+                return res.status(404).json({
+                    message: '댓글을 찾을 수 없습니다.'
+                })
             }
             res.status(200).send('댓글 삭제 완료!')
         }
@@ -689,24 +697,26 @@ app.put('/comment/:id', authenticateJWT, (req, res)=>{
     const boardId = req.params.id
     const {id: commentId, newComment: commentContent, userId} = req.body
 
-    console.log(req.body)
-    console.log('===========', boardId, commentId, commentContent)
-    console.log('토큰 값 잘 받아왔어?', req.user)
-
     if (!commentContent) {
-        return res.status(400).send('내용은 필수입니다.')
+        return res.status(400).json({message: '댓글은 필수입니다.'})
     }
 
     if(req.user.usernum !== userId){
-        return res.status(403).send('댓글 수정 권한이 없습니다.')
+        return res.status(403).json({
+            message: '수정 권한이 없습니다.',
+            statusCode: 400
+        })
     }
 
     db.query('update comments set comment_content = ?, updated_at = now() where comment_id = ? and board_id = ?',
         [commentContent, commentId, boardId],
         (err)=>{
             if(err){
-                console.error('댓글 수정 오류!', err)
-                return res.status(500).send('서버 오류')
+                console.error('댓글 수정 오류 발생', err)
+                return res.status(500).json({
+                    message: '댓글 수정 중 오류 발생',
+                    statusCode: 500
+                })
             }
             res.status(200).send('댓글 수정 완료!')
         }

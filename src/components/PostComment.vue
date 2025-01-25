@@ -5,7 +5,6 @@
         <!-- 댓글 작성 폼 -->
         <form @submit.prevent="submitComment" class="comment-form" v-if="isLoggedIn">
             <textarea v-model.trim="newComment" placeholder="댓글을 작성하세요" rows="4"></textarea>
-            <label v-if="errorMsg && showError" class="errorMsg">{{errorMsg}}</label>
             <button type="submit" class="submit-btn">댓글 작성</button>
         </form>
 
@@ -19,10 +18,10 @@
                 <!-- 수정 클릭 여부 -->
                 <p v-if="!comment.editMode" class="comment-text">
                   <span class="user-name">{{comment.userName}}</span>
-                  <span class="comment-content">{{comment.comment_content}}</span>
-                  <span style="display: none;">{{ comment.userNum }}</span>
                   <span class="comment-time">{{formatTimeAgo(comment.updated_at)}}</span>
                   <span class="comment-time">{{comment.status}}</span>
+                  <span class="comment-content">{{comment.comment_content}}</span>
+                  <span style="display: none;">{{ comment.userNum }}</span>
                 </p>
                 <textarea v-else v-model.trim="comment.comment_content" rows="4"></textarea>
               </div>
@@ -48,48 +47,55 @@
 
         <!-- 댓글이 없을 때 -->
         <div v-else class="no-comments">
-        <p>댓글이 없습니다. 첫 댓글을 달아주세요!</p>
+          <p>댓글이 없습니다. 첫 댓글을 달아주세요!</p>
         </div>
+
+        <!-- 각 에러에 대한 모달창 표시 -->
+        <ErrorModal :isVisible="isModalVisible" :message="modalMessage" @close="isModalVisible = false" />
     </div>
 </template>
   
 <script>
 import axios from 'axios'
-import jwt_decode from 'jwt-decode';
+import jwt_decode from 'jwt-decode'
+import ErrorModal from './ErrorModal.vue'
 export default {
     name: 'PostComment',
     props: ['id'], // 상세보기 컴포넌트에서 받은 게시글 id값
+    components:{
+      ErrorModal
+    },
     data() {
       return {
         newComment: '',
         comments: [],
-        showError: false, // 작성 에러메세지 유무
         editMode: false, // 댓글 수정 여부
         isLoggedIn: localStorage.getItem('token'),
         isUserMode: false,
-        userNum: null
+        userNum: null,
+
+        // 모달 상태 관리
+        isModalVisible: false,
+        modalMessage: ''
       }
     },
     mounted(){
       this.commentAll()
     },
-    computed:{
-      errorMsg() {
-        if (this.newComment === '') {
-          return '댓글을 입력해주세요!'
-        }
-          return ''
-      }
-    },
     methods: {
+        // 모달로 에러 메시지 표시
+      showModal(message) {
+        this.modalMessage = message
+        this.isModalVisible = true
+      },
       // 댓글 목록 조회
       commentAll(){
         axios
         .get(`https://localhost:3000/comment/${this.id}`)
         .then(response =>{
-            console.log('받아온 댓글: ', response.data)
             this.comments = response.data // 댓글 배열 저장 json
 
+            // 로그인 유무 확인
             if(this.isLoggedIn){
               try {
                   this.userNum = jwt_decode(this.isLoggedIn)  // jwt_decode를 호출
@@ -102,18 +108,19 @@ export default {
                   })
               } catch (error) {
                   console.error('토큰 디코딩 오류:', error)
-        }
-      }
+              }
+          }
         })
         .catch(error =>{
-            console.error('데이터 가져오기 오류', error)
+          this.showModal(error.response.data.message + ' (상태 코드: ' + error.response.data.statusCode + ')', 
+               error.response.data.statusCode)
         })
       },
 
       // 댓글 작성 API 호출 하는 부분
       submitComment() {
-        if(this.errorMsg){
-            this.showError = true
+        if(!this.newComment){
+            this.showModal('댓글을 입력해주세요.')
             return
         }
 
@@ -129,14 +136,14 @@ export default {
         )
         .then(response =>{
             console.log('작성한 댓글: ', response.data)
-            alert('댓글 작성 완료되었습니다.')
+            this.showModal('댓글 작성 완료되었습니다.')
             this.newComment = ''
             // 댓글 작성 후에 댓글 목록을 다시 뿌려주기 위해 메소드 호출
             this.commentAll()
         })
         .catch(error =>{
-            console.log('댓글 작성 오류', error)
-            this.showError = true
+          this.showModal(error.response.data.message + ' (상태 코드: ' + error.response.data.statusCode + ')', 
+          error.response.data.statusCode)
         })
       },
 
@@ -171,8 +178,10 @@ export default {
 
       // 댓글 수정
       editComment(comment){
-        console.log('-----------', comment.comment_id)
-        console.log('----------', comment.comment_content)
+        if(!comment.comment_content){
+          this.showModal('댓글 입력은 필수입니다.')
+          return
+        }
 
         this.userNum = jwt_decode(this.isLoggedIn)  // jwt_decode를 호출
         const userId = this.userNum.usernum
@@ -193,22 +202,18 @@ export default {
           )
           .then(response =>{
             console.log('수정된 댓글',response.data)
-            alert('수정 완료되었습니다.')
+            this.showModal('수정 완료되었습니다.')
             this.commentAll()
           })
           .catch(error =>{
-            if(error){
-              console.error('댓글 수정 오류', error)
-            }
+            this.showModal(error.response.data.message + ' (상태 코드: ' + error.response.data.statusCode + ')', 
+            error.response.data.statusCode)
           })
         }
       },
 
       // 댓글 삭제
       deleteComment(commentId){
-        // 댓글 번호 잘 가져오는지 확인
-        console.log(commentId)
-
         const checkComment = confirm('댓글을 삭제하시겠습니까?')
         if(checkComment){
           this.userNum = jwt_decode(this.isLoggedIn)  // jwt_decode를 호출
@@ -222,13 +227,12 @@ export default {
           })
           .then(response =>{
             console.log(response.data, '삭제 완료')
-            alert('삭제 완료되었습니다.')
+            this.showModal('삭제 완료되었습니다.')
             this.commentAll()
           })
           .catch(error =>{
-            if(error){
-              console.error('댓글 삭제 오류', error)
-            }
+            this.showModal(error.response.data.message + ' (상태 코드: ' + error.response.data.statusCode + ')', 
+            error.response.data.statusCode)
           })
         }
       }
@@ -286,9 +290,8 @@ textarea{
 }
 
 .comment-item {
-  /* display: flex;
-  justify-content: space-between; */
-  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
   padding: 1rem;
   border-bottom: 1px solid #e0e0e0;
   position: relative;
@@ -305,6 +308,7 @@ textarea{
 .comment-content {
   display: flex;
   flex-direction: column;
+  margin-top: 5px; /* 이름과 댓글 간격 조정 */
 }
 
 .comment-actions {
@@ -335,19 +339,19 @@ textarea{
 
 .comment-details {
   display: flex;
-  gap: 0.2rem;
+  flex-direction: column;
+  gap: 5px;
 }
 
 .comment-text {
   display: flex;
+  flex-direction: row; /* 이름과 시간 한 줄로 배치 */
+  align-items: center;
 }
 
 .user-name {
-  font-weight: bold; /* 선택사항: 이름 강조 */
-}
-
-.comment-content {
-  margin-top: 5px; /* 이름과 댓글 간격 조정 */
+  font-weight: bold;
+  margin-right: 10px; /* 간격 조정 */
 }
 
 .comment-time {
