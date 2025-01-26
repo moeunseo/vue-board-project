@@ -269,6 +269,7 @@ app.get('/main/:query', (req, res)=>{
 })
 
 // Multer 설정 (파일 업로드)
+// 파일 저장할 폴더 생성 및 이름 설정
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const date = new Date()
@@ -281,6 +282,7 @@ const storage = multer.diskStorage({
         // 폴더가 없다면 자동 생성
         fs.mkdirSync(folderPath, {recursive: true})
 
+        // 콜백
         cb(null, folderPath)
       },
       filename: (req, file, cb) => {
@@ -295,6 +297,7 @@ const upload = multer({
     storage: storage,
     limits: { fileSize: 10 * 1024 * 1024 }, // 10MB 제한
     fileFilter: (req, file, cb) => {
+        // 모든 파일 업로드 허용
       cb(null, true)
     }
 })
@@ -311,7 +314,10 @@ app.post('/write', authenticateJWT, upload.array('files'), (req, res) => {
     // 한 후에 빈 값을 보낼 수 있다. (우회되는 경우 방지)
     // 따라서 백엔드에서 한번 더 체크하는 것이 보안에 더 좋다.
     if (!title || !content) {
-        return res.status(400).send('제목과 내용은 필수입니다.');
+        return res.status(400).json({
+            message: '모든 필드를 입력해주세요.',
+            statusCode: 400
+        })
     }
 
     const usernum = req.user.usernum
@@ -323,7 +329,11 @@ app.post('/write', authenticateJWT, upload.array('files'), (req, res) => {
         [title, content, usernum],
         (err, result) => {
             if (err) {
-                return res.status(500).send('서버 오류');
+                console.error('게시글 작성 중에 오류 발생', err)
+                return res.status(500).json({
+                    message: '게시글 작성 중에 오류 발생',
+                    statusCode: 500
+                })
             }
 
             const boardId = result.insertId // result안에 게시글id값을 포함하고 있음
@@ -347,35 +357,24 @@ app.post('/write', authenticateJWT, upload.array('files'), (req, res) => {
                         )
                     })
                 })
+                // Promise가 완료된 후 실행
                 Promise.all(fileQueries)
                 .then(()=>{
                     res.status(200).send('게시글이 성공적으로 업로드 되었습니다.')
                 })
                 .catch(error =>{
-                    res.status(500).send(error)
+                    console.error('게시글 업로드 중에 오류 발생', error)
+                    res.status(500).json({
+                        message: '게시글 업로드 중에 오류 발생',
+                        statusCode: 500
+                    })
                 })
             }
             else{
-                res.status(200).send('게시글이 성공적으로 업로드되었습니다. (파일 없음)');
+                res.status(200).send('게시글이 성공적으로 업로드되었습니다. (파일 없음)')
             }
         }
-    );
-});
-
-// 게시글 상세보기 페이지 이동
-app.get('/detail/:id', (req, res) => {
-    const postId = req.params.id
-
-    // 토큰이 존재하는 경우만 authenticateJWT 미들웨어 실행
-    if (req.headers['authorization']) {
-        authenticateJWT(req, res, () => {
-            console.log('~~~~~~~~~~~~', req.user) // 유저 정보 확인
-            fetchPostDetails(postId, res) // 게시글 상세 데이터 반환
-        })
-    } else {
-        // 토큰이 없는 경우에도 게시글 상세 정보를 반환
-        fetchPostDetails(postId, res)
-    }
+    )
 })
 
 // 게시글 상세보기 페이지 이동
@@ -385,7 +384,7 @@ app.get('/detail/:id', (req, res) => {
     // 토큰이 존재하는 경우만 authenticateJWT 미들웨어 실행
     if (req.headers['authorization']) {
         authenticateJWT(req, res, () => {
-            console.log('~~~~~~~~~~~~', req.user) // 유저 정보 확인
+            console.log('로그인한 유저', req.user) // 유저 정보 확인
             fetchPostDetails(postId, res) // 게시글 상세 데이터 반환
         })
     } else {
@@ -405,13 +404,21 @@ function fetchPostDetails(postId, res) {
       [postId], 
       (err, results) => {
         if (err) {
-            return res.status(500).send('서버 오류')
+            console.error('게시글을 가져오는 도중 오류 발생', err)
+            return res.status(500).json({
+                message: '게시글을 가져오는 도중 에러 발생',
+                statusCode: 500
+            })
         }
 
         if (results.length === 0) {
-            return res.status(404).send('게시글을 찾을 수 없습니다.')
+            return res.status(404).json({
+                message: '게시글을 찾을 수 없습니다. (Not Found)',
+                statusCode: 404
+            })
         }
 
+        // json형태로 받기
         const post = results[0]
         const updatedTime = new Date(post.board_update_time)
         const createdTime = new Date(post.board_current_time)
@@ -438,61 +445,88 @@ function fetchPostDetails(postId, res) {
                 })
             }
         })
-
-        res.json(response)  // 게시글 정보 응답
+        res.status(200).json(response)  // 게시글 정보 응답
     })
 }
 
 // 게시글 삭제
-app.delete('/detail/:id', authenticateJWT, (req, res)=>{
+// 트랜잭션으로도 해보기
+app.delete('/detail/:id', authenticateJWT, (req, res) => {
     const postId = req.params.id
 
-    // 삭제 권한 등록
+    // 삭제 권한 확인
+    db.query('select userNum from board where board_id = ?', [postId], (err, resultUser) => {
+        if (err) {
+            console.error('게시글 삭제 중 유저 확인 오류 발생', err)
+            return res.status(500).json({
+                message: '게시글 삭제 중 유저 확인 오류 발생',
+                statusCode: 500
+            })
+        }
 
-    // DB에서 첨부파일 URL 가져오기
-    db.query('select file_url from board_file where board_id = ?',
-        [postId], 
-        async (err, resultsDB)=>{
-            if (err){
-                return res.status(500).send('서버 오류')
-            }                
+        const userNum = resultUser[0].userNum
+        if (userNum !== req.user.usernum) {
+            return res.status(403).json({
+                message: '수정 권한이 없습니다.',
+                statusCode: 403
+            })
+        }
 
-            // 게시글 삭제
-            db.query('delete from board where board_id = ?',
-                [postId],
-                async (err, results) =>{
-                    if(err){
-                        console.error('DB 삭제 중 오류 발생', err)
-                        return res.status(500).send('서버 오류')
-                    }
-
-                    if(results.affectedRows === 0){
-                        return res.status(404).send('게시글을 찾을 수 없습니다.')
-                    }
-                } 
-            )
+        // 권한이 있으면 첨부파일 삭제와 게시글 삭제 진행
+        db.query('select file_url from board_file where board_id = ?', [postId], async (err, resultsDB) => {
+            if (err) {
+                console.error('첨부파일 가져오는 도중 오류 발생', err)
+                return res.status(500).json({
+                    message: '첨부파일 가져오는 도중 오류 발생',
+                    statusCode: 500
+                })
+            }
 
             // 서버에 업로드된 파일 삭제
-            const fileDeletePromises = resultsDB.map(async(file)=>{
+            const fileDeletePromises = resultsDB.map(async (file) => {
                 const filePath = path.resolve(file.file_url)
                 console.log(filePath)
-                try{
-                    await fs.unlink(filePath)
+                // 업로드된 파일이 있는지 확인
+                try {
+                    await fs.promises.unlink(filePath)
                     console.log(`파일 삭제 성공: ${filePath}`)
-                } catch(err){
-                    console.error(`파일 삭제 실패: ${filePath}`)
+                } catch (err) {
+                    console.error(`파일 삭제 실패: ${filePath}`, err)
+                    throw new Error('파일 삭제 중 오류 발생')
                 }
             })
 
-            Promise.all(fileDeletePromises)
-            .then(()=>{
-                res.status(200).send('게시글 삭제 완료')
+            // 게시글 삭제
+            db.query('delete from board where board_id = ?', [postId], (err, results) => {
+                if (err) {
+                    console.error('DB 삭제 중 오류 발생', err)
+                    return res.status(500).json({
+                        message: '게시글 삭제 중 오류 발생',
+                        statusCode: 500
+                    })
+                }
+
+                if (results.affectedRows === 0) {
+                    return res.status(404).json({
+                        message: '게시글이 존재하지 않습니다. (Not Found)',
+                        statusCode: 404
+                    })
+                }
+
+                Promise.all(fileDeletePromises)
+                .then(() => {
+                    res.status(200).send('게시글 삭제 완료')
+                })
+                .catch((error) => {
+                    console.error('게시글 삭제 중 오류 발생', error)
+                    res.status(500).json({
+                        message: '게시글 삭제 중 오류 발생',
+                        statusCode: 500
+                    })
+                })
             })
-            .catch(()=>{
-                res.status(500).send('파일 삭제 중 오류')
-            })
-        }
-    )
+        })
+    })
 })
 
 // 게시글 수정
@@ -504,7 +538,10 @@ app.put('/detail/:id', authenticateJWT, upload.array('files'),(req, res)=>{
     console.log('==', req.files)
 
     if (!title || !content) {
-        return res.status(400).send('제목과 내용은 필수입니다.');
+        return res.status(400).json({
+            message: '모든 필드를 채워주세요.',
+            statusCode: 400
+        })
     }
 
     // 수정 권한 등록
@@ -513,20 +550,29 @@ app.put('/detail/:id', authenticateJWT, upload.array('files'),(req, res)=>{
         (err, result)=>{
             if(err){
                 console.error('사용자 번호 가져오면서 에러 발생', err)
-                return res.status(500).send('서버 오류')
+                return res.status(500).json({
+                    message: '유저 확인 중 오류 발생',
+                    statusCode: 500
+                })
             }
 
             const board = result[0]
-            console.log('^^^^^^^^^^^^^^^^^^^^',board.userNum, req.user.usernum)
             if(board.userNum !== req.user.usernum){
-                return res.status(403).send('수정 권한이 없습니다.')
+                return res.status(403).json({
+                    message: '수정 권한이 없습니다.',
+                    statusCode: 403
+                })
             }
 
             db.query('update board set board_title = ?, board_content = ?, board_update_time = now() where board_id = ?',
                 [title, content, postId],
                 (err) =>{
                     if(err){
-                        return res.status(500).send('서버 오류')
+                        console.error('게시글 수정 중 오류 발생', err)
+                        return res.status(500).json({
+                            message: '게시글 수정 중 오류 발생',
+                            statusCode: 500
+                        })
                     }
                 
                     // 파일이 업로드 됐을 때만 실행
@@ -549,14 +595,18 @@ app.put('/detail/:id', authenticateJWT, upload.array('files'),(req, res)=>{
                         })
                         Promise.all(fileQueries)
                         .then(()=>{
-                            res.status(200).send('파일 삽입 완료')
+                            res.status(200).send('게시글 수정 완료')
                         })
                         .catch(error =>{
-                            res.status(500).send(error)
+                            console.error('게시글 수정(파일 업로드) 중 오류 발생', error)
+                            res.status(500).json({
+                                message: '게시글 수정 중 오류 발생', 
+                                statusCode: 500
+                            })
                         })
                     }
                     else{
-                        res.status(200).send('파일 삽입 완료')
+                        res.status(200).send('게시글 수정 완료')
                     }
                 }
             )
@@ -575,17 +625,24 @@ app.delete('/delete/file', (req,res) =>{
     db.query('delete from board_file where file_id = ?',
         [fileId],
         (err, result)=>{
-            if(err) return res.status(500).send('파일 삭제 오류', err)
-            
-            console.log('삭제할 파일: ', result)
+            if(err) {
+                console.error('게시글 수정 중 파일 삭제 오류 발생', err)
+                return res.status(500).json({
+                    message: '게시글 수정 중 파일 삭제 오류 발생',
+                    statusCode: 500
+                })
+            }
+
             // 만약 삭제할 파일이 있다면
             if(result.affectedRows > 0){
-                console.log('ㅎ2')
                 const filePath = path.resolve(fileUrl)
                 fs.unlink(filePath, (err)=>{
                     if(err){
                         console.error(`파일 삭제 실패: ${filePath}`, err)
-                        return res.status(500).send('파일 삭제 실패')
+                        return res.status(500).json({
+                            message: '수정 중 파일 삭제 실패',
+                            statusCode: 500
+                        })
                     }
                     else{
                         console.log(`파일 삭제 성공: ${filePath}`)
@@ -594,7 +651,7 @@ app.delete('/delete/file', (req,res) =>{
                 })
             }
             else{
-                res.status(404).send('파일 찾을 수 없습니다.')
+                res.status(404).send('파일을 찾을 수 없습니다.')
             }
         }
     )

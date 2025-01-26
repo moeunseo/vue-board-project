@@ -62,6 +62,10 @@
         </div>
       </div>
     </form>
+
+    <!-- 에러메시지 모달창 -->
+    <ErrorModal :isVisible="isModalVisible" :message="modalMessage" @close="isModalVisible = false" />
+
      <!-- 댓글 컴포넌트 추가 -->
      <!-- 댓글 목록을 불러올 땐 게시글id값을 props를 사용하여 전달 -->
      <PostComment :id = "boardId"/>
@@ -69,16 +73,16 @@
 </template>
 
 <script>
-// 중복되는 css는 따로 파일을 만들어서 import
-// import "@/assets/css/common.css"
 import axios from "axios"
 // 댓글 컴포넌트 추가
 import PostComment from "@/components/PostComment.vue"
-import jwt_decode from 'jwt-decode';
+import jwt_decode from 'jwt-decode'
+import ErrorModal from "./ErrorModal.vue"
 export default {
     name: "PostDetail",
     components: {
-      PostComment
+      PostComment,
+      ErrorModal
     },
     data(){
         return {
@@ -88,78 +92,96 @@ export default {
             content: '',
             files: []
           },
-            updateTime: '',
-            showError: false,
-            isEditMode: true, // true일 때 읽기 모드
-            boardId: this.$route.params.id, // 파라미터 값 받아옴
-            isAuthor: false // 게시글 작성자와 로그인한 유저 여부
+          updateTime: '',
+          showError: false,
+          isEditMode: true, // true일 때 읽기 모드
+          boardId: this.$route.params.id, // 파라미터 값 받아옴
+          isAuthor: false, // 게시글 작성자와 로그인한 유저 여부
+          // 모달 상태 관리
+          isModalVisible: false,
+          modalMessage: ''
         }
     },
     // 상세보기 페이지로 넘어오면서 게시글에 대한 데이터들을 화면에 렌더링 하기 위함
     created(){
       this.boardId = this.$route.params.id
       console.log('게시글 번호', this.boardId)
+      // 게시글 삭제 유무 확인
       if(!this.boardId){
-        alert('유효하지 않은 게시글입니다.')
-        this.$router.push({name: 'Home'})
+        this.showModal('유효하지 않은 게시글입니다.')
+        setTimeout(()=>{
+          this.$router.push({name: 'Home'})
+        }, 3000)
         return
       }
       this.boardDetail(this.boardId)
     },
+
     // 수정할 때도 유효성 검사 진행
     computed: {
     errorMsg() {
       const errors = [];
       if (this.form.title.trim() === "") {
-        errors.push("제목을 입력해주세요.");
+        errors.push("제목을 입력해주세요.")
       }
       if (this.form.content.trim() === "") {
-        errors.push("내용을 입력해주세요.");
+        errors.push("내용을 입력해주세요.")
       }
-      return errors.join("\n");
+      return errors.join("\n")
     }
   },
   methods:{
     // 파일 크기 지정
     formatFileSize(size) {
-        const units = ['bytes', 'KB', 'MB'];
-        let i = 0;
-        while (size >= 1024 && i < units.length - 1) {
-          size /= 1024;
-          i++;
-        }
-        return `${Math.round(size)} ${units[i]}`;
-      },
+      const units = ['bytes', 'KB', 'MB']
+      let i = 0
+      while (size >= 1024 && i < units.length - 1) {
+        size /= 1024
+        i++
+      }
+      return `${Math.round(size)} ${units[i]}`
+    },
 
+    // 업로드 시간 지정
     formatDate(dateString) {
       const date = new Date(dateString);
       return `${date.getFullYear()}/${
         (date.getMonth() + 1).toString().padStart(2, '0')}/${
         date.getDate().toString().padStart(2, '0')} ${
-        date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+        date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
+        
+        
     },
+
+    // 모달로 에러 메시지 표시
+    showModal(message) {
+      this.modalMessage = message
+      this.isModalVisible = true
+    },
+
     // 게시글 db에서 가져오기
     async boardDetail(boardId){
-      const token = localStorage.getItem('token');
-      const tokenValue = token ? { headers: { 'Authorization': `Bearer ${token}` } } : {};
+      const token = localStorage.getItem('token')
+      const tokenValue = token ? { headers: { 'Authorization': `Bearer ${token}` } } : {}
 
       try {
-        const response = await axios.get(`https://localhost:3000/detail/${boardId}`, tokenValue);
-        const post = response.data;
-        this.form.userNum = post.userNum;
-        this.form.title = post.title;
-        this.form.content = post.content;
-        this.updateTime = this.formatDate(post.updatedAt);
-        this.form.files = post.files || [];
+        const response = await axios.get(`https://localhost:3000/detail/${boardId}`, tokenValue)
+        const post = response.data
+        this.form.userNum = post.userNum
+        this.form.title = post.title
+        this.form.content = post.content
+        this.updateTime = this.formatDate(post.updatedAt) + post.status
+        this.form.files = post.files || []
         
         // 토큰이 있을 때만 사용자 ID와 비교해서 작성자 여부 판단
         if (token) {
-          const decoded = jwt_decode(token);
-          const userId = decoded.usernum;
-          this.isAuthor = (userId === this.form.userNum);
+          const decoded = jwt_decode(token)
+          const userId = decoded.usernum
+          this.isAuthor = (userId === this.form.userNum)
         }
       } catch (error) {
-        console.error('게시글을 가져오면서 오류 발생', error);
+        this.showModal(error.response.data.message + ' (상태 코드: ' + error.response.data.statusCode + ')', 
+               error.response.data.statusCode)
       }
     },
 
@@ -174,12 +196,15 @@ export default {
         )
         .then(response =>{
           console.log(response.data, '삭제 완료')
-          alert('삭제 완료되었습니다.')
+          this.showModal('삭제 완료되었습니다.')
           // 삭제 후엔 리스트 화면으로
-          this.$router.push({name: 'Home'})
+          setTimeout(()=>{
+            this.$router.push({name: 'Home'})
+          }, 1000)
         })
         .catch(error =>{
-          console.error('게시글 삭제 오류', error)
+          this.showModal(error.response.data.message + ' (상태 코드: ' + error.response.data.statusCode + ')', 
+               error.response.data.statusCode)
         })
       }
     },
@@ -197,8 +222,9 @@ export default {
           console.log(response.data, '데이터 삭제 완료')
           this.form.files.splice(index, 1)
         })
-        .catch(err =>{
-          console.error('파일 삭제 오류', err)
+        .catch(error =>{
+          this.showModal(error.response.data.message + ' (상태 코드: ' + error.response.data.statusCode + ')', 
+               error.response.data.statusCode)
         })
       }
       else{
@@ -248,7 +274,7 @@ export default {
           })
 
           for (let [key, value] of formData.entries()) {
-            console.log('정신 차려', key, value);
+            console.log('받아온 파일들: ', key, value);
           }
 
           axios
@@ -259,10 +285,11 @@ export default {
           .then(response =>{
             console.log(response.data, '수정 완료')
             this.isEditMode = true
-            alert('수정이 완료되었습니다.')
+            this.showModal('수정이 완료되었습니다.')
           })
-          .catch(err =>{
-            console.error('게시글 수정 오류', err)
+          .catch(error =>{
+            this.showModal(error.response.data.message + ' (상태 코드: ' + error.response.data.statusCode + ')', 
+               error.response.data.statusCode)
           })
         }
       }

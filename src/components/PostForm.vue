@@ -14,6 +14,11 @@
         <textarea id="content" rows="10" placeholder="내용을 입력하세요" v-model.trim="form.content"></textarea>
       </div>
 
+      <!-- 에러 메시지 -->
+      <div v-if="showError" class="errorMsg">
+        {{ errorMsg }}
+      </div>
+
       <div class="custom-file-upload">
         <label for="file">파일 선택</label>
         <input type="file" id="file"  ref="fileInputRef" @change="fileUpload" class="hidden-file" multiple>
@@ -28,10 +33,6 @@
         </li>
       </ul>
 
-      <!-- 에러 메시지 -->
-      <div v-if="showError" class="errorMsg">
-        {{ errorMsg }}
-      </div>
       <!-- 로딩 중일 때 작성버튼 비활성화 -->
       <div class="button-group">
         <div>
@@ -42,14 +43,19 @@
         </div>
       </div>
     </form>
+    <!-- 에러메시지 모달창 -->
+    <ErrorModal :isVisible="isModalVisible" :message="modalMessage" @close="isModalVisible = false" />
   </div>
 </template>
 
 <script>
-// import "@/assets/css/common.css"
 import axios from 'axios'
+import ErrorModal from './ErrorModal.vue'
 export default {
   name: "PostForm",
+  components:{
+    ErrorModal
+  },
   data() {
     return {
       // 객체 형태로 받아오면 편함!
@@ -59,7 +65,10 @@ export default {
         files: [] // 업로드된 파일 배열에 저장
       },
       showError: false, // 에러 메시지 여부
-      isUploading: false
+      isUploading: false,
+       // 모달 상태 관리
+      isModalVisible: false,
+      modalMessage: ''
     }
   },
   computed: {
@@ -83,7 +92,12 @@ export default {
     removeFile(index) {
     // 특정 파일 제거
     this.form.files.splice(index, 1);
-  },
+    },
+    // 모달로 에러 메시지 표시
+    showModal(message) {
+      this.modalMessage = message
+      this.isModalVisible = true
+    },
     addPost() {
       // 유효성 검사
       if (this.errorMsg) {
@@ -95,6 +109,7 @@ export default {
 
       const writeCheck = confirm('게시글을 작성하겠습니까?')
       if(writeCheck){
+        // 여러 형태의 데이터 저장 시 사용
         const formData = new FormData()
 
         formData.append("title", this.form.title)
@@ -113,13 +128,16 @@ export default {
         }})
         .then(response =>{
           console.log(response.data)
-          alert('작성 완료되었습니다.')
+          this.showModal('작성 완료되었습니다.')
           this.form = { title: "", content:"",files: [] }
-          this.$router.push({name: 'Home'})
+          setTimeout(()=>{
+            this.$router.push({name: 'Home'})
+          }, 1000)
         })
         .catch(error =>{
           console.log('토큰', localStorage.getItem('token'))
-          console.error('게시글 작성 오류: ', error)
+          this.showModal(error.response.data.message + ' (상태 코드: ' + error.response.data.statusCode + ')', 
+               error.response.data.statusCode)
           this.showError = true
         })
       }
